@@ -3,6 +3,9 @@
 # 使用 X-Access-Key / X-Secret-Key 进行鉴权
 set -euo pipefail
 
+echo "本工程已重构为老板专属只读 Copilot，请使用 bin/cordys-boss。" >&2
+exit 1
+
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="${SKILL_DIR}/.env"

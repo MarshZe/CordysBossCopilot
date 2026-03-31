@@ -1,306 +1,163 @@
-# Cordys CRM Skill for OpenClaw
+# Cordys Boss Copilot — 高管顾问团
 
-像与人交谈一样与你的 **Cordys CRM 工作区**交互。  
-商机、联系人、潜在客户 —— 全部通过自然对话与你的 AI 助理完成。
+面向**老板 / 核心管理层**的只读经营 Copilot。
+它不是一个通用 CRM 助手，也不是帮一线同学点按钮的自动化脚本，而是一个把 CRM 数据转化为**经营判断、风险提示和可视化分析报告**的专属 Skill。
 
-这个 Skill 将 **Cordys CRM CLI** 包装进 **OpenClaw 会话环境**：
+## 产品定位
 
-1. 你用自然语言描述需求
-2. AI 解析意图
-3. 自动转换为 `cordys` CLI 命令
-4. 执行 API 请求并返回结果
+这个工程解决的核心问题不是"怎么拿到数据"，而是：
 
-借助 Prompt 的动态调优机制，用户可以在 **不修改任何代码**的情况下控制：
+1. 稳定接入老板真正关心的全模块数据
+2. 四个高管角色（CEO/CFO/COO/CMO）从不同视角提供专业分析
+3. 用可视化图表让数据一目了然
+4. 输出可直接使用的结论、风险和行动建议
 
-- 输出格式
-- 过滤条件
-- 排序规则
-- 分页逻辑
+## 核心业务口径
 
-从而让 AI 更贴合真实 CRM 业务场景。
+| 概念 | 说明 |
+|------|------|
+| 合同金额 = GMV | 直播产生的 GMV 录入合同表单，已筛除退款金额 |
+| 财务核算 | 关注合同表单中的金额即可，不关注回款表单 |
+| 样品单价 | 日常售卖价格，用于成本预估，不是产品实际成本 |
 
----
+## 四角色顾问体系
 
-# 为什么这个 Skill 有用
+| 角色 | 定位 | 核心关注 |
+|------|------|---------|
+| **CEO** | 全局经营操盘手 | 经营健康度、战略方向、风险排序、资源配置 |
+| **CFO** | 财务与投入产出分析师 | 成本控制、GMV/ROI、合同分析、预算预警 |
+| **COO** | 运营执行力分析师 | 履约效率、流程瓶颈、团队执行力、目标达成、损耗管控 |
+| **CMO** | 达人生态与增长分析师 | 达人结构、平台健康度、增长质量、转化漏斗、客户生命周期 |
 
-| 系统视角 | 用户意图 | 输出 |
-|---|---|---|
-| 👂 监听自然语言 | 提供模块 / 条件 / 字段 | ⚙️ 转换为 CLI / API 请求 |
-| 📦 简化重复任务 | 分页 / 搜索 / CRUD | ✅ 自动执行 |
-| 📊 数据同步 | 查看销售管道 / 客户数据 | 🕓 可结合 cron 自动化 |
-
----
-
-# 项目结构
+### 四角色联动分析
 
 ```
-CordysCRM-skills/
-├── README.md              # 当前工程基本说明
-├── SKILL.md               # 助手在 OpenClaw 会话里引用的 prompt/reference
-├── bin/cordys             # 内置 CLI，可直接试用
-└── references/
-    └── crm-api.md         # API 字段和请求体 RFC
+                  ┌─────────────────┐
+                  │    CEO 决策层    │
+                  │ 战略/资源/风险   │
+                  └────┬───────┬────┘
+                       │       │
+            ┌──────────┘       └──────────┐
+            ▼                              ▼
+  ┌─────────────────┐            ┌─────────────────┐
+  │    CFO 财务层    │◄──────────►│    COO 执行层    │
+  │ 成本/GMV/ROI     │            │ 效率/目标/履约    │
+  └────────┬────────┘            └────────┬────────┘
+           │                              │
+           └──────────┐  ┌────────────────┘
+                      ▼  ▼
+            ┌─────────────────┐
+            │    CMO 增长层    │
+            │ 达人/平台/漏斗   │
+            └─────────────────┘
 ```
 
-快速安装
+## 绝对边界
 
-```bash
-git clone https://github.com/1Panel-dev/CordysCRM-skills ~/.openclaw/workspace/skills/cordys-crm
+- 仅面对老板 / 核心管理层开放
+- 只读，不执行任何写操作
+- 不混入 `CordysCRM` 主仓库，独立演进
+
+## 项目结构
+
+```text
+CordysBossCopilot/
+├── README.md                          # 项目说明
+├── SKILL.md                           # 技能定义（角色体系/命令/规则）
+├── .env.example                       # 环境变量模板
+├── bin/
+│   └── cordys-boss                    # 只读 CLI（5 大命令族 + 统计扩展）
+├── references/
+│   ├── crm-api.md                     # CRM 通用 API 参考
+│   ├── data-analysis-api.md           # 数据分析接口参考
+│   ├── sample-order-api.md            # 样品工单只读接口参考
+│   ├── contract-analysis-api.md       # 合同（GMV）分析参考（含统计/客户统计）
+│   ├── target-api.md                  # 商务目标管理接口参考
+│   ├── home-stat-api.md               # 首页统计接口参考
+│   └── readonly-boundary.md           # 只读安全边界说明
+├── prompts/
+│   ├── role-ceo.md                    # CEO 角色分析框架（含决策树/KPI联动）
+│   ├── role-cfo.md                    # CFO 角色分析框架（含四象限/决策树）
+│   ├── role-coo.md                    # COO 角色分析框架（含流程效率/决策树）
+│   ├── role-cmo.md                    # CMO 角色分析框架（含生命周期/决策树）
+│   ├── visualization-rules.md         # 可视化数据分析规则（含四象限图）
+│   ├── report-templates.md            # 报告模板（日报/周报/月报/专题）
+│   ├── boss-insight-rules.md          # 洞察输出规则
+│   └── risk-scan-rules.md             # 风险巡检规则
+└── examples/
+    ├── daily-brief.md                 # 日报示例
+    └── weekly-review.md               # 周报示例
 ```
 
----
+## CLI 命令族
 
-# 配置环境变量
+| 命令族 | 用途 | 示例 |
+|--------|------|------|
+| `analysis` | 经营数据分析（看盘） | `cordys-boss analysis customer-overview` |
+| `sample-order` | 样品工单只读（风险下钻） | `cordys-boss sample-order page` |
+| `crm` | CRM 核心模块只读 | `cordys-boss crm page contract` |
+| `crm statistic` | 模块统计数据 | `cordys-boss crm statistic contract` |
+| `crm customer-stat` | 客户维度统计 | `cordys-boss crm customer-stat contract <id>` |
+| `target` | 商务目标管理 | `cordys-boss target ranking` |
+| `home-stat` | 首页统计 | `cordys-boss home-stat lead` |
 
-创建 `.env`
+## 环境变量
+
+创建 `.env`：
 
 ```ini
-CORDYS_ACCESS_KEY=你的AccessKey
-CORDYS_SECRET_KEY=你的SecretKey
-CORDYS_CRM_DOMAIN=https://你的域名
+CORDYS_ACCESS_KEY=老板专属只读AccessKey
+CORDYS_SECRET_KEY=老板专属只读SecretKey
+CORDYS_CRM_DOMAIN=https://你的CRM域名
 ```
 
-示例：
+## 报告能力
 
+### 日报
+CEO 主导的经营速览，包含经营健康度仪表盘、核心指标快照、达人/工单/成本三盘分析、当日重点关注事项。
+
+### 周报（四角色联合）
+- **合同周数据规则**：合同的「开始时间」或「结束时间」落在本周区间内的合同均纳入统计
+- CEO 总览 + 经营健康度仪表盘 + 核心指标周看板
+- CFO 投入产出分析（成本 + GMV + ROI + 四象限 + 合同统计）
+- COO 执行效率分析（履约 + 目标 + 排名 + 损耗）
+- CMO 达人生态分析（增长 + 结构 + 漏斗 + 生命周期）
+- CEO 总结（风险排序 + 资源配置 + 下周关键动作）
+
+### 月报
+四角色深度版，含同比/环比分析、达人GMV贡献分析、客户生命周期分析、下月策略建议。
+
+### 专题分析
+- 商务个人复盘（业绩+成本+效率全维度）
+- 平台专题分析（达人+成本+转化全平台对比）
+- 达人深度分析（GMV贡献+投入分析+合作评估）
+
+### 可视化标准
+- 所有报告必须包含可视化图表
+- 使用 ASCII 字符图表 + Markdown 表格 + emoji 状态指示
+- 每张图表附带一句话结论
+- 支持四象限分析图
+
+## 分析方法论
+
+### 三层分析法
 ```
-CORDYS_CRM_DOMAIN=https://crm.example.com
-```
-
----
-
-# CLI 版本说明
-
-项目提供 **两个 CLI 实现**
-
-| CLI | 推荐场景               | 特点     |
-|---|--------------------|--------|
-| Shell CLI (`cordys`) | Linux / macOS / CI | 默认 CLI |
-| Python CLI (`cordys.py`) | 跨平台 / 复杂命令         | 灵活     |
-
-默认 **优先使用 Shell CLI**。
-
-如果 Shell CLI 不支持某些命令，会提示使用 Python CLI。
-
----
-
-# Shell CLI（默认）
-
-无需额外依赖，仅需要 `curl`，使用示例：
-
-```bash
-cordys crm page lead
-cordys crm page opportunity
-cordys crm org
-cordys help
-```
-
-优势：
-
-- 无需 Python
-- 启动速度快
-- 适合 Linux / macOS / CI
-
----
-
-如果系统不支持 Bash ｜ Windows 环境 ｜ Shell CLI 不可用，则提示：
-```
-⚠️ 当前命令 Shell CLI 不支持
-
-请使用 Python CLI：
-
-python3 bin/cordys.py <command>
+第一层：看盘（analysis 接口 → 经营总览）
+第二层：下钻（sample-order/crm 接口 → 具体明细）
+第三层：判断（四角色交叉分析 → 结论+风险+建议）
 ```
 
-示例：
-
-```
-cordys crm search opportunity '{...}'
-
-⚠️ 当前命令 Shell CLI 不支持
-
-请使用：
-
-python3 bin/cordys.py crm search opportunity '{...}'
-```
-
----
-
-# Python CLI（完整版本）
-
-安装依赖：
-
-```bash
-pip install requests python-dotenv
-```
-
-使用示例：
-
-```bash
-python3 bin/cordys.py crm page lead
-python3 bin/cordys.py crm org
-python3 bin/cordys.py help
-```
-
-优势：
-- 更好的错误处理
-- 跨平台支持
-
----
-
-# 验证安装
-
-```bash
-cordys help
-```
-
-或者
-
-```bash
-python3 bin/cordys.py help
-```
-
-如果返回帮助信息说明安装成功。
-
----
-
-# CLI 常用命令
-
-分页列表
-
-```bash
-cordys crm page lead
-cordys crm page opportunity
-cordys crm page account
-```
-
-关键词搜索
-
-```bash
-cordys crm page lead "测试"
-```
-
-获取单条记录
-
-```bash
-cordys crm get lead "123456"
-```
-
-复杂搜索
-
-```bash
-cordys crm search opportunity '{"cupytnt":1,"pageSize":30,"keyword":"测试"}'
-```
-
-组织架构
-
-```bash
-cordys crm org
-```
-
-部门成员
-
-```bash
-cordys crm members '{"current":1,"pageSize":50,"departmentIds":["dept1"]}'
-```
-
-联系人查询
-
-```bash
-# 查询 客户｜商机 联系人
-cordys crm contact opportunity '商机id'
-cordys crm contact account '客户id'
-```
-
-原始 API
-
-```bash
-cordys raw GET /settings/fields?cordys raw GET /setting---
-```
-
-# 跟进计划与记录（通用查询）
-
-示例：
-
-```bash
-cordys crm follow plan lead '{"sourceId":"927627065163785","current":1,"pageSize":10,"keyword":"","status":"ALL","myPlan":false}'
-
-cordys crm follow record account '{"sourceId":"1751888184018919","current":1,"pageSize":10,"keyword":"","myPlan":false}'
-```
-
-- `sourceId` 指向某条商机/客户/线索的唯一 ID，必须传入才能拉到与之关联的计划或记录；只提供 `keyword` 时只做关键字模糊搜索，无法替代 `sourceId`。
-- `status` 面向 `plan` 接口，支持 `ALL`、`UNFINISHED`、`FINISHED` 等（以 Cordys 枚举为准），用来控制计划流转；`myPlan` 控制是否只看本人创建的计划。
-- `page_payload` 默认只补齐 `current/pageSize/sort/filters`，所以当你希望筛选特定 `sourceId`/`status`/`myPlan`，必须以 JSON body 形式传入完整字段。
-
-默认情况下，如果你只提供关键词，CLI 会自动补齐分页结构（current=1、pageSize=30、sort={}、filters=[]）。
-
----
-
-# 二级模块支持
-
-Cordys CRM 部分资源属于二级模块。
-
-例如：
-
-```
- `cordys crm page contract/payment-plan`：查询回款计划的分页列表，支持传入关键词/JSON body，实际上调用的是 `POST /contract/payment-plan/page`。
- `cordys crm page invoice`：查询发票的分页列表，通过 `POST /invoice/page` 获取，每个条件都可以通过 `filters` 精细控制。
- `cordys crm page contract/business-title`：检索工商抬头列表，同样支持关键词/filters。
- `cordys crm page contract/payment-record`：查看回款记录列表，可结合关键词、`filters` 或 `viewId` 进行精细筛选。
-```
-
-示例：
-
-```bash
-cordys crm page contract/payment-plan
-```
-
-回款记录：
-
-```bash
-cordys crm page contract/payment-record
-```
-
-发票：
-
-```bash
-cordys crm page invoice
-```
-
----
-
-# 深度 API 调用
-
-查看字段
-
-```bash
-cordys raw GET /settings/fields?module=account
-```
-
-复杂过滤示例：
-
-```bash
-cordys crm search opportunity '{"filters":[{"field":"Stage","operator":"equals","value":"Closed Won"}]}'
-```
-
-详细结构参考：
-
-```
-references/crm-api.md
-```
-
----
-
-# 自动化
-
-示例：
-
-```python
-cron.add({
-  "name": "每天成交商机",
-  "schedule": {"kind": "cron", "expr": "0 9 * * *"},
-  "payload": {
-    "kind": "agentTurn",
-    "message": "c rdys crm page opportunity \"Closed Won\""
-  }
-})
-```
+### 角色决策树
+每个角色都配备了决策树，根据数据自动触发分析路径，确保不遗漏关键风险。
+
+### 交叉分析
+当一个问题涉及多个维度时，自动触发交叉分析（如成本异常→CFO发现→COO追溯→CEO决策）。
+
+## 成功标准
+
+- 老板 5 分钟内获得当天经营结论
+- AI 回答中"建议动作"占比稳定
+- 关键经营问题无需打开 CRM 页面即可回答
+- 每份报告都有充足的可视化图表辅助决策
+- 四个角色视角能覆盖老板所有经营决策需求
+- 交叉分析能发现单一视角无法发现的深层问题

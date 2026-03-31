@@ -13,6 +13,9 @@ from typing import Optional, Dict, Any
 from urllib import parse, request
 from urllib.error import HTTPError, URLError
 
+print("本工程已重构为老板专属只读 Copilot，请使用 bin/cordys-boss。", file=sys.stderr)
+sys.exit(1)
+
 try:
     from dotenv import load_dotenv
 except ImportError:
