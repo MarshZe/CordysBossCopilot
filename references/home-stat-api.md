@@ -87,6 +87,18 @@ GET /home/statistic/department/tree
 - 了解团队结构
 - 权限范围确认
 
+## ⚠️ 当前不可用的统计接口
+
+以下接口的 DTO 已在后端定义但**未暴露 Controller 端点**，调用会 404：
+
+| 统计类型 | DTO | 状态 | 替代方案 |
+|---------|-----|------|---------|
+| 客户统计 | `HomeCustomerStatistic` | ❌ 未实现 | 使用 `analysis customer-overview` |
+| 跟进记录统计 | `HomeFollowUpRecordStatistic` | ❌ 未实现 | 使用 `analysis customer-overview` → `followed` 卡片 |
+| 跟进计划统计 | `HomeFollowUpPlanStatistic` | ❌ 未实现 | 无替代，不在报告中使用 |
+
+**报告生成时不要尝试调用 `home-stat customer` 或 `home-stat follow-up`，这些接口不存在。**
+
 ## CMO 典型使用场景
 
 ### 转化漏斗构建

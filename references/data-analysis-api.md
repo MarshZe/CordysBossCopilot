@@ -44,9 +44,20 @@ POST /data-analysis/customer/overview
 
 ### 关键返回字段
 
-- `data.statCards`
-- `data.growthTrend`
-- `data.cumulativeTrend`
+- `data.statCards` — 包含以下指标卡片：
+  - `total` — 达人总数（不含公海池）
+  - `newThisMonth` — 时间范围内新增达人数
+  - `abLevel` — A+B 级达人数，附带 `ratio`（A+B 占总数比例）
+  - `followed` — **时间范围内有跟进记录的达人数**（注意：是"有跟进的客户数"，不是"跟进记录条数"）。附带 `ratio`（跟进覆盖率）
+  - `pool` — 公海池达人数
+- `data.growthTrend` — 按粒度统计的新增趋势（每个点含 `period` 和 `value`）
+- `data.cumulativeTrend` — 累计趋势
+
+### ⚠️ 数据口径说明
+
+- `followed` 指标的含义是**在筛选时间范围内，至少有 1 条跟进记录的达人数量**（SQL 是 `COUNT(DISTINCT fur.customer_id)`）
+- 如果不传时间范围（`startTime`/`endTime` 为 null），`followed` 返回的是**历史上所有有过跟进的达人数**
+- 当前系统没有"跟进记录总条数"的聚合接口，报告中不应使用"跟进记录 X 条"这个指标，应改用"已跟进达人 X 人（覆盖率 X%）"
 
 ## 2. 达人画像
 
