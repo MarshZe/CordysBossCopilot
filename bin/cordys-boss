@@ -76,6 +76,20 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 }
 
+statistic_payload() {
+  python3 - <<'PY'
+import json
+payload = {
+  "current": 1,
+  "pageSize": 30,
+  "sort": {},
+  "combineSearch": {"searchMode": "AND", "conditions": []},
+  "filters": []
+}
+print(json.dumps(payload, ensure_ascii=False))
+PY
+}
+
 # ─── HTTP 请求 ───
 
 api_request() {
@@ -234,7 +248,47 @@ boss_crm() {
       ;;
     statistic)
       local module="${1:-}"
-      [[ -n "$module" ]] || die "crm statistic 需要模块名（contract/payment-record/order）"
+      [[ -n "$module" ]] || die "crm statistic 需要模块名（contract/payment-record/order/opportunity）"
+      shift || true
+      local first="${1:-}"
+      local body
+      if [[ -n "$first" && "$first" == \{* ]]; then
+        body="$first"
+      else
+        body="$(statistic_payload)"
+      fi
+      api_request POST "/${module}/statistic" -d "$body"
+      ;;
+    customer-stat)
+      local stat_type="${1:-}"
+      [[ -n "$stat_type" ]] || die "crm customer-stat 需要统计类型（contract/invoice/contract/payment-plan/contract/payment-record）"
+      local account_id="${2:-}"
+      [[ -n "$account_id" ]] || die "crm customer-stat 需要客户 ID"
+      api_request GET "/account/${stat_type}/statistic/${account_id}"
+      ;;
+    customer-page)
+      local sub_type="${1:-}"
+      [[ -n "$sub_type" ]] || die "crm customer-page 需要子类型（opportunity/contract/order/invoice/contract/payment-plan/contract/payment-record）"
+      local account_id="${2:-}"
+      [[ -n "$account_id" ]] || die "crm customer-page 需要客户 ID"
+      shift 2 || true
+      local first="${1:-}"
+      local body
+      if [[ -n "$first" && "$first" == \{* ]]; then
+        body="$first"
+      else
+        body="$(page_payload "${first:-}")"
+      fi
+      api_request POST "/account/${sub_type}/page" -d "$body"
+      ;;
+    contract-invoice-stat)
+      local contract_id="${1:-}"
+      [[ -n "$contract_id" ]] || die "crm contract-invoice-stat 需要合同 ID"
+      api_request GET "/contract/invoice/statistic/${contract_id}"
+      ;;
+    chart)
+      local module="${1:-}"
+      [[ -n "$module" ]] || die "crm chart 需要模块名（account/lead/opportunity）"
       shift || true
       local first="${1:-}"
       local body
@@ -243,17 +297,10 @@ boss_crm() {
       else
         body="$(page_payload "${first:-}")"
       fi
-      api_request POST "/${module}/statistic" -d "$body"
-      ;;
-    customer-stat)
-      local stat_type="${1:-}"
-      [[ -n "$stat_type" ]] || die "crm customer-stat 需要统计类型（contract/invoice/payment-plan/payment-record）"
-      local account_id="${2:-}"
-      [[ -n "$account_id" ]] || die "crm customer-stat 需要客户 ID"
-      api_request GET "/customer/${stat_type}/statistic/${account_id}"
+      api_request POST "/${module}/chart" -d "$body"
       ;;
     *)
-      die "crm 子命令不支持: $action（支持: page, get, search, contact, follow, product, org, members, statistic, customer-stat）"
+      die "crm 子命令不支持: $action（支持: page, get, search, contact, follow, product, org, members, statistic, customer-stat, customer-page, contract-invoice-stat, chart）"
       ;;
   esac
 }
@@ -332,7 +379,7 @@ boss_home_stat() {
       else
         body="$(home_stat_payload)"
       fi
-      api_request POST "/home/stat/lead" -d "$body"
+      api_request POST "/home/statistic/lead" -d "$body"
       ;;
     opportunity)
       local first="${1:-}"
@@ -342,7 +389,7 @@ boss_home_stat() {
       else
         body="$(home_stat_payload)"
       fi
-      api_request POST "/home/stat/opportunity" -d "$body"
+      api_request POST "/home/statistic/opportunity" -d "$body"
       ;;
     opportunity-underway)
       local first="${1:-}"
@@ -352,7 +399,7 @@ boss_home_stat() {
       else
         body="$(home_stat_payload)"
       fi
-      api_request POST "/home/stat/opportunity-underway" -d "$body"
+      api_request POST "/home/statistic/opportunity/underway" -d "$body"
       ;;
     opportunity-success)
       local first="${1:-}"
@@ -362,10 +409,10 @@ boss_home_stat() {
       else
         body="$(home_stat_payload)"
       fi
-      api_request POST "/home/stat/opportunity-success" -d "$body"
+      api_request POST "/home/statistic/opportunity/success" -d "$body"
       ;;
     department-tree)
-      api_request GET "/system/department/tree"
+      api_request GET "/home/statistic/department/tree"
       ;;
     *)
       die "home-stat 子命令不支持: $action（支持: lead, opportunity, opportunity-underway, opportunity-success, department-tree）"
@@ -410,8 +457,11 @@ cordys-boss — 老板专属只读经营 Copilot CLI（高管顾问团）
     二级模块: contract/payment-plan, contract/payment-record,
              contract/business-title, invoice, opportunity/quotation
 
-    statistic <module> [JSON]      模块统计数据（contract/payment-record/order）
-    customer-stat <type> <accountId>  客户维度统计（contract/invoice/payment-plan/payment-record）
+    statistic <module> [JSON]      模块统计数据（contract/payment-record/order/opportunity）
+    customer-stat <type> <accountId>  客户维度统计（contract/invoice/contract/payment-plan/contract/payment-record）
+    customer-page <type> <accountId> [keyword|JSON]  客户子资源分页（opportunity/contract/order/invoice）
+    contract-invoice-stat <contractId>  合同发票统计
+    chart <module> [keyword|JSON]   模块图表数据（account/lead/opportunity）
 
   🎯 target — 商务目标管理
     home                          首页目标摘要
@@ -421,12 +471,12 @@ cordys-boss — 老板专属只读经营 Copilot CLI（高管顾问团）
     history [JSON]                历史快照
     level-options                 层级选项
 
-  🏠 home-stat — 首页统计
+  🏠 home-stat — 首页统计（/home/statistic）
     lead [JSON]                   线索统计
     opportunity [JSON]            商机统计
     opportunity-underway [JSON]   进行中商机统计
     opportunity-success [JSON]    赢单商机统计
-    department-tree               部门权限树
+    department-tree               部门权限树（首页统计维度）
 
   help                            显示帮助
 
@@ -439,7 +489,12 @@ cordys-boss — 老板专属只读经营 Copilot CLI（高管顾问团）
   cordys-boss target home
   cordys-boss target ranking
   cordys-boss crm statistic contract
+  cordys-boss crm statistic opportunity
   cordys-boss crm customer-stat contract 123456
+  cordys-boss crm customer-page contract 123456
+  cordys-boss crm customer-page opportunity 123456
+  cordys-boss crm contract-invoice-stat 789012
+  cordys-boss crm chart account
   cordys-boss home-stat lead
 
 安全边界:

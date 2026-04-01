@@ -10,7 +10,7 @@
 ### 接口
 
 ```http
-POST /home/stat/lead
+POST /home/statistic/lead
 ```
 
 ### 用途
@@ -30,7 +30,7 @@ POST /home/stat/lead
 ### 接口
 
 ```http
-POST /home/stat/opportunity
+POST /home/statistic/opportunity
 ```
 
 ### 用途
@@ -46,7 +46,7 @@ POST /home/stat/opportunity
 ### 接口
 
 ```http
-POST /home/stat/opportunity-underway
+POST /home/statistic/opportunity/underway
 ```
 
 ### 用途
@@ -61,7 +61,7 @@ POST /home/stat/opportunity-underway
 ### 接口
 
 ```http
-POST /home/stat/opportunity-success
+POST /home/statistic/opportunity/success
 ```
 
 ### 用途
@@ -77,7 +77,7 @@ POST /home/stat/opportunity-success
 ### 接口
 
 ```http
-GET /system/department/tree
+GET /home/statistic/department/tree
 ```
 
 ### 用途

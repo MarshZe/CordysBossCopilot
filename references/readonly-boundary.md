@@ -25,10 +25,35 @@ Cordys Boss Copilot 的第一原则是：**只读**。
 - `POST /contract/statistic` — 合同统计
 - `POST /contract/payment-record/statistic` — 回款记录统计
 - `POST /order/statistic` — 订单统计
-- `GET /customer/contract/statistic/{accountId}` — 客户合同统计
-- `GET /customer/invoice/statistic/{accountId}` — 客户发票统计
-- `GET /customer/contract/payment-plan/statistic/{accountId}` — 客户回款计划统计
-- `GET /customer/contract/payment-record/statistic/{accountId}` — 客户回款记录统计
+- `POST /opportunity/statistic` — 商机统计
+- `GET /account/contract/statistic/{accountId}` — 客户合同统计
+- `GET /account/invoice/statistic/{accountId}` — 客户发票统计
+- `GET /account/contract/payment-plan/statistic/{accountId}` — 客户回款计划统计
+- `GET /account/contract/payment-record/statistic/{accountId}` — 客户回款记录统计
+- `GET /contract/invoice/statistic/{contractId}` — 合同发票统计
+
+### 客户子资源分页（只读）
+
+- `POST /account/opportunity/page` — 客户商机列表
+- `POST /account/contract/page` — 客户合同列表
+- `POST /account/order/page` — 客户工单列表
+- `POST /account/invoice/page` — 客户发票列表
+- `POST /account/contract/payment-plan/page` — 客户回款计划列表
+- `POST /account/contract/payment-record/page` — 客户回款记录列表
+
+### 模块图表数据（只读）
+
+- `POST /account/chart` — 客户图表
+- `POST /lead/chart` — 线索图表
+- `POST /opportunity/chart` — 商机图表
+
+### 首页统计（只读）
+
+- `POST /home/statistic/lead` — 线索统计
+- `POST /home/statistic/opportunity` — 商机统计
+- `POST /home/statistic/opportunity/underway` — 进行中商机统计
+- `POST /home/statistic/opportunity/success` — 赢单商机统计
+- `GET /home/statistic/department/tree` — 部门权限树
 
 ## 明确禁止的接口
 

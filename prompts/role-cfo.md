@@ -121,6 +121,9 @@ bin/cordys-boss target ranking                # 人效排名
 ```bash
 bin/cordys-boss crm customer-stat contract <accountId>   # 达人合同统计
 bin/cordys-boss crm customer-stat invoice <accountId>    # 达人发票统计
+bin/cordys-boss crm customer-page contract <accountId>   # 达人合同明细列表
+bin/cordys-boss crm contract-invoice-stat <contractId>   # 单个合同的发票统计
+bin/cordys-boss crm chart account                        # 客户图表数据
 ```
 
 ### 异常下钻

@@ -111,6 +111,7 @@ bin/cordys-boss analysis order-overview       # 履约态势
 bin/cordys-boss analysis order-cost           # 成本态势
 bin/cordys-boss analysis customer-overview    # 达人态势
 bin/cordys-boss crm statistic contract        # 合同态势
+bin/cordys-boss crm statistic opportunity     # 商机态势
 bin/cordys-boss sample-order page '{"status":"PENDING_RECOVERY","overdueLevel":"OVERDUE"}'
 ```
 

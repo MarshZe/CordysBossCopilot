@@ -132,6 +132,13 @@ bin/cordys-boss target history '{"month":"2026-02"}'  # 上月对比
 bin/cordys-boss target level-options           # 层级配置
 ```
 
+### 商机分析
+```bash
+bin/cordys-boss crm statistic opportunity      # 商机统计（赢单率/阶段分布）
+bin/cordys-boss crm chart opportunity          # 商机图表数据
+bin/cordys-boss crm customer-page opportunity <accountId>  # 某达人的商机列表
+```
+
 ## 输出风格
 
 ### 语言特征

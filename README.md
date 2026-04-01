@@ -98,6 +98,9 @@ CordysBossCopilot/
 | `crm` | CRM 核心模块只读 | `cordys-boss crm page contract` |
 | `crm statistic` | 模块统计数据 | `cordys-boss crm statistic contract` |
 | `crm customer-stat` | 客户维度统计 | `cordys-boss crm customer-stat contract <id>` |
+| `crm customer-page` | 客户子资源分页 | `cordys-boss crm customer-page contract <id>` |
+| `crm chart` | 模块图表数据 | `cordys-boss crm chart account` |
+| `crm contract-invoice-stat` | 合同发票统计 | `cordys-boss crm contract-invoice-stat <id>` |
 | `target` | 商务目标管理 | `cordys-boss target ranking` |
 | `home-stat` | 首页统计 | `cordys-boss home-stat lead` |
 
@@ -113,19 +116,18 @@ CORDYS_CRM_DOMAIN=https://你的CRM域名
 
 ## 报告能力
 
-### 日报
-CEO 主导的经营速览，包含经营健康度仪表盘、核心指标快照、达人/工单/成本三盘分析、当日重点关注事项。
+所有报告通过 webhook 推送到飞书/钉钉/企业微信，按倒金字塔结构设计（结论→证据→详情）。
 
-### 周报（四角色联合）
+### 日报（30秒扫完）
+一句话结论 + 关键数字 + 目标进度条 + 今日必须盯。至少 3 张图表。
+
+### 周报（3分钟掌握全貌）
 - **合同周数据规则**：合同的「开始时间」或「结束时间」落在本周区间内的合同均纳入统计
-- CEO 总览 + 经营健康度仪表盘 + 核心指标周看板
-- CFO 投入产出分析（成本 + GMV + ROI + 四象限 + 合同统计）
-- COO 执行效率分析（履约 + 目标 + 排名 + 损耗）
-- CMO 达人生态分析（增长 + 结构 + 漏斗 + 生命周期）
-- CEO 总结（风险排序 + 资源配置 + 下周关键动作）
+- 目标进度 → 核心指标看板 → Top3 风险 → 投入产出 → 履约执行 → 达人生态 → 老板 To-Do
+- 按决策优先级排序，不按角色分段。至少 8 张图表。
 
-### 月报
-四角色深度版，含同比/环比分析、达人GMV贡献分析、客户生命周期分析、下月策略建议。
+### 月报（10分钟深度复盘）
+CEO 摘要 + 月度目标达成 + 财务分析 + 运营分析 + 达人分析 + 下月策略与资源配置。至少 10 张图表。
 
 ### 专题分析
 - 商务个人复盘（业绩+成本+效率全维度）
@@ -133,10 +135,11 @@ CEO 主导的经营速览，包含经营健康度仪表盘、核心指标快照�
 - 达人深度分析（GMV贡献+投入分析+合作评估）
 
 ### 可视化标准
-- 所有报告必须包含可视化图表
-- 使用 ASCII 字符图表 + Markdown 表格 + emoji 状态指示
+- 图表用 Markdown 代码块包裹，等宽字体对齐
+- 用 `█░` 条形图 + Markdown 表格 + emoji 状态指示
 - 每张图表附带一句话结论
-- 支持四象限分析图
+- 不用 ASCII 框线艺术（webhook 渲染会错位）
+- 支持四象限分析图、漏斗图、热力图
 
 ## 分析方法论
 

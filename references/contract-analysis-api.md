@@ -146,7 +146,7 @@ bin/cordys-boss crm statistic contract [JSON]
 ### 接口
 
 ```http
-GET /customer/contract/statistic/{accountId}
+GET /account/contract/statistic/{accountId}
 ```
 
 ### 用途
@@ -168,7 +168,7 @@ bin/cordys-boss crm customer-stat contract <accountId>
 ### 接口
 
 ```http
-GET /customer/invoice/statistic/{accountId}
+GET /account/invoice/statistic/{accountId}
 ```
 
 ### 用途

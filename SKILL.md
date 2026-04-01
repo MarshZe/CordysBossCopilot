@@ -18,10 +18,10 @@ description: |
   - COO：履约效率、流程瓶颈、团队执行力、目标达成、损耗管控
   - CMO：达人生态、平台结构、增长质量、转化漏斗、客户生命周期
 
-  【报告能力】
-  - 日报：经营速览，至少 3 张图表
-  - 周报：四角色联合分析，至少 6 张图表，含合同周数据
-  - 月报：深度经营分析，至少 8 张图表
+  【报告能力（Webhook 交付）】
+  - 日报：30秒扫完的经营速览，至少 3 张图表
+  - 周报：3分钟掌握全貌带 to-do list，至少 8 张图表，含合同周数据
+  - 月报：10分钟深度经营复盘，至少 10 张图表
   - 专题分析：按需提供，至少 4 张图表
   - 商务复盘：个人维度全方位分析
   - 达人深度分析：单客户 GMV/成本/合作周期全景
@@ -161,13 +161,18 @@ bin/cordys-boss crm follow <plan|record> <module> [JSON]  # 跟进计划/记录
 bin/cordys-boss crm product [keyword|JSON]             # 产品列表
 bin/cordys-boss crm org                                # 组织架构
 bin/cordys-boss crm members <JSON>                     # 部门成员
-bin/cordys-boss crm statistic <module> [JSON]          # 模块统计（contract/payment-record/order）
-bin/cordys-boss crm customer-stat <type> <accountId>   # 客户维度统计（contract/invoice/payment-plan/payment-record）
+bin/cordys-boss crm statistic <module> [JSON]          # 模块统计（contract/payment-record/order/opportunity）
+bin/cordys-boss crm customer-stat <type> <accountId>   # 客户维度统计（contract/invoice/contract/payment-plan/contract/payment-record）
+bin/cordys-boss crm customer-page <type> <accountId> [keyword|JSON]  # 客户子资源分页（opportunity/contract/order/invoice）
+bin/cordys-boss crm contract-invoice-stat <contractId> # 合同发票统计
+bin/cordys-boss crm chart <module> [keyword|JSON]      # 模块图表数据（account/lead/opportunity）
 ```
 
 支持的一级模块：`lead`(线索) / `account`(客户) / `opportunity`(商机) / `contract`(合同) / `contact`(联系人)
 
 支持的二级模块：`contract/payment-plan`(回款计划) / `contract/payment-record`(回款记录) / `contract/business-title`(工商抬头) / `invoice`(发票) / `opportunity/quotation`(报价单)
+
+客户子资源支持：`opportunity`(客户商机) / `contract`(客户合同) / `order`(客户工单) / `invoice`(客户发票) / `contract/payment-plan`(客户回款计划) / `contract/payment-record`(客户回款记录)
 
 ### 商务目标管理
 
@@ -213,8 +218,9 @@ bin/cordys-boss home-stat department-tree               # 部门权限树
 | 投入产出比怎么样 | `analysis order-cost` + `crm page contract` + `crm statistic contract` |
 | 合同金额目标完成情况 | `target ranking` + `target team` |
 | 本周合同情况 | `crm page contract` (开始/结束时间在本周) |
-| 某个达人贡献了多少 GMV | `crm customer-stat contract <accountId>` + `crm page contract` (按达人筛选) |
+| 某个达人贡献了多少 GMV | `crm customer-stat contract <accountId>` + `crm customer-page contract <accountId>` |
 | 合同整体统计 | `crm statistic contract` |
+| 商机整体统计 | `crm statistic opportunity` |
 
 ### COO 视角问题
 
@@ -239,7 +245,9 @@ bin/cordys-boss home-stat department-tree               # 部门权限树
 | 新开发的达人多少 | `analysis customer-overview` + `home-stat lead` |
 | 商机漏斗怎么样 | `home-stat opportunity` + `crm page opportunity` |
 | 转化率多少 | `home-stat lead` + `analysis customer-overview` + `home-stat opportunity-success` |
-| 某个达人的合作历史 | `crm customer-stat contract <accountId>` + `crm get account <id>` |
+| 某个达人的合作历史 | `crm customer-stat contract <accountId>` + `crm customer-page contract <accountId>` + `crm get account <id>` |
+| 达人图表分析 | `crm chart account` |
+| 线索图表分析 | `crm chart lead` |
 
 ### 复合问题（触发交叉分析）
 
@@ -250,9 +258,20 @@ bin/cordys-boss home-stat department-tree               # 部门权限树
 | 哪些商务该加资源/该收缩 | CEO+CFO | `target ranking` + `analysis order-cost` + `crm page contract` + `crm statistic contract` |
 | 给我做周报 | CEO+全部 | 全部 analysis(WEEK) + `crm page contract`(本周活跃) + `crm statistic contract` + `target` + `home-stat` |
 | 给我做月报 | CEO+全部 | 全部 analysis(MONTH) + `crm page contract`(本月) + `crm statistic contract` + `target` + `target history` + `home-stat` |
-| 某个达人值不值得继续投入 | CEO+CFO+CMO | `crm customer-stat contract <id>` + `crm get account <id>` + `analysis order-cost` (按达人筛选) |
+| 某个达人值不值得继续投入 | CEO+CFO+CMO | `crm customer-stat contract <id>` + `crm customer-page contract <id>` + `crm customer-page opportunity <id>` + `crm customer-page order <id>` + `crm get account <id>` |
 
 ## 输出原则
+
+### 第一性原理：帮老板做出更好的决策
+
+报告不是汇报工作，不是罗列数据，是让老板看完就知道该干什么。
+
+### Webhook 交付设计
+
+报告通过 webhook 推送到飞书/钉钉/企业微信，必须：
+- **手机优先**：一屏看到核心结论，3 屏内完成阅读
+- **Markdown 渲染**：用加粗、emoji、表格、代码块，不用 ASCII 框线艺术
+- **倒金字塔**：先结论再证据再详情，最重要的信息放最前面
 
 ### 不同于模板搬运的专业输出
 
@@ -262,58 +281,64 @@ bin/cordys-boss home-stat department-tree               # 部门权限树
 ```
 
 **高管顾问团**（要求）：
-```
-CFO 视角：
-本月样品投入 X 元，但 GMV 仅增长 Y%，投入产出比从上月 1:8 下降到 1:5.5。
-成本集中在前 3 位商务（占 65%），但其中 2 位的达人转化率低于平均水平。
+```markdown
+> 💡 本月样品投入偏高，ROI 从 1:8 降到 1:5.5，成本集中在少数商务且转化低，需收缩低效投入。
 
-📊 商务投入产出散点图
-  张三  ●(投入3.2万, GMV 25万, ROI 1:7.8)
-  李四  ●(投入2.8万, GMV 8万, ROI 1:2.9) ⚠️
-  王五  ●(投入1.5万, GMV 15万, ROI 1:10) ✓
+📊 商务投入产出排名
 
-建议：本周周会优先复盘成本 Top3 商务的达人转化效率，
-对于转化率持续低于均值的商务，考虑调整其样品预算上限。
+       投入    GMV产出    ROI
+张三   1.2万   15.0万    1:12.5  ✅ 明星
+李四   2.8万    8.0万    1:2.9   ⚠️ 问题
+王五   0.5万   12.0万    1:24    ✅ 金牛
+
+结论：李四投入高但ROI低于安全线，需本周复盘
+
+✅ 建议：本周周会优先复盘成本 Top3 商务的达人转化效率
 ```
 
 ### 可视化要求
 
 所有报告**必须**包含可视化数据图表，具体规范详见 `prompts/visualization-rules.md`：
 - 日报至少 3 张图表
-- 周报至少 6 张图表
-- 月报至少 8 张图表
-- 使用 ASCII 字符、Markdown 表格、emoji 指示器组合呈现
+- 周报至少 8 张图表
+- 月报至少 10 张图表
+- 图表用 Markdown 代码块包裹，确保等宽对齐
+- 用 `█░` 画条形图，emoji 做状态指示
 - 每张图表必须附带一句话结论
+- **不用 ASCII 框线艺术**（`━━╔══║` 在移动端会错位）
 
-### 输出结构（角色化）
+### 输出结构（倒金字塔）
 
-每次输出根据激活的角色调整结构，但核心框架不变：
+```
+1. 核心判断（一句话，能直接指导决策）
+2. 关键数字（3-5 个，带对比）
+3. 可视化图表（至少 1 张）
+4. 风险提醒（排序，不并列）
+5. 建议动作（具体到人、事、时间）
+```
 
-1. **角色身份声明**（一句话说明从什么视角分析）
-2. **核心判断**（不是结论复述，是经营判断）
-3. **关键证据**（支撑判断的 3-5 个数据点，含图表）
-4. **风险预警**（该角色视角下的风险，含可视化）
-5. **行动建议**（具体到人、单、时间的管理动作）
-6. **交叉提醒**（需要其他角色视角补充的问题）
+角色视角体现在分析深度里，不需要声明"CFO 视角"等标签。
 
 ### 输出禁忌
 
-- 不直接贴大段 JSON
-- 不只做数据复述（"达人总数 77"不是分析）
-- 不说"看情况""大概还行""保持沟通中"
-- 不给执行岗视角的按钮式操作建议
-- 不写流水账式的客户罗列
-- 合同金额就是 GMV，不要说"回款""到账"（回款表单不是核心关注点）
-- 样品单价是售卖价预估，不要说"实际成本""精确核算"
-- 不能没有图表（每次输出必须有可视化元素）
+- ❌ 直接贴大段 JSON
+- ❌ 只做数据复述（"达人总数 77"不是分析）
+- ❌ 说"看情况""大概还行""保持沟通中"
+- ❌ 给执行岗视角的按钮式操作建议
+- ❌ 没有图表的纯文字输出
+- ❌ 用 ASCII 框线艺术（webhook 渲染会错位）
+- ❌ 写流水账式的客户罗列
+- ✅ 合同金额 = GMV，不说"回款""到账"
+- ✅ 样品单价 = 售卖价预估，不说"实际成本"
+- ✅ 达人 = 客户，用行业语言
 
 ## 报告模板
 
-详见 `prompts/report-templates.md`，包含：
-- 每日经营速览（CEO 主导）
-- 周报（四角色联合，含合同周数据查询策略）
-- 月度经营报告（四角色深度版）
-- 专题分析报告（商务复盘、平台专题、达人深度分析）
+详见 `prompts/report-templates.md`，所有报告按倒金字塔结构设计，通过 webhook 推送：
+- **日报**（30秒）：结论 + 关键数字 + 今日必须盯
+- **周报**（3分钟）：目标进度 + 核心指标 + 风险 + 投入产出 + 履约 + 达人 + To-Do
+- **月报**（10分钟）：CEO 摘要 + 目标达成 + 四维度深度分析 + 下月策略
+- **专题**：商务复盘、平台分析、达人深度分析
 
 ### 周报合同数据核心规则
 
@@ -337,21 +362,33 @@ bin/cordys-boss crm page contract '{"combineSearch":{"searchMode":"OR","conditio
 
 CRM 模块支持动态时间常量（在 `combineSearch.conditions` 中使用）：
 
-| 常量 | 描述 |
-|------|------|
-| `TODAY` | 今天 |
-| `YESTERDAY` | 昨天 |
-| `WEEK` | 本周 |
-| `LAST_WEEK` | 上周 |
-| `MONTH` | 本月 |
-| `LAST_MONTH` | 上个月 |
-| `QUARTER` | 本季度 |
-| `LAST_QUARTER` | 上季度 |
-| `YEAR` | 本年度 |
-| `LAST_SEVEN` | 过去7天 |
-| `LAST_THIRTY` | 过去30天 |
+| 常量 | 描述 | | 常量 | 描述 |
+|------|------|-|------|------|
+| `TODAY` | 今天 | | `YESTERDAY` | 昨天 |
+| `TOMORROW` | 明天 | | `WEEK` | 本周 |
+| `LAST_WEEK` | 上周 | | `NEXT_WEEK` | 下周 |
+| `MONTH` | 本月 | | `LAST_MONTH` | 上个月 |
+| `NEXT_MONTH` | 下个月 | | `QUARTER` | 本季度 |
+| `LAST_QUARTER` | 上季度 | | `NEXT_QUARTER` | 下季度 |
+| `YEAR` | 本年度 | | `LAST_YEAR` | 上年度 |
+| `NEXT_YEAR` | 下年度 | | `LAST_SEVEN` | 过去7天 |
+| `SEVEN` | 未来7天 | | `LAST_THIRTY` | 过去30天 |
+| `THIRTY` | 未来30天 | | `LAST_SIXTY` | 过去60天 |
+| `SIXTY` | 未来60天 | | | |
 
-示例：
+#### 高级用法
+
+自定义 N 天前查询：
+```json
+{"value": ["CUSTOM,30,BEFORE_DAY"], "operator": "DYNAMICS", "name": "createTime", "multipleValue": false, "type": "TIME_RANGE_PICKER"}
+```
+
+时间戳区间查询（精确到毫秒）：
+```json
+{"value": [1711872000000, 1712476800000], "operator": "BETWEEN", "name": "createTime", "multipleValue": false, "type": "TIME_RANGE_PICKER"}
+```
+
+标准示例：
 ```json
 {
   "combineSearch": {

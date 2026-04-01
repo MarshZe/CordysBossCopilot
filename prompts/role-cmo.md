@@ -130,7 +130,12 @@ bin/cordys-boss crm page contract '{"combineSearch":{"searchMode":"AND","conditi
 ```bash
 bin/cordys-boss crm get account <id>                            # 达人详情
 bin/cordys-boss crm customer-stat contract <accountId>          # 达人合同统计
-bin/cordys-boss crm follow record account '{"sourceId":"<id>"}' # 达人跟进记录
+bin/cordys-boss crm customer-page contract <accountId>          # 达人合同明细
+bin/cordys-boss crm customer-page opportunity <accountId>       # 达人商机明细
+bin/cordys-boss crm customer-page order <accountId>             # 达人工单明细
+bin/cordys-boss crm chart account                               # 客户图表数据
+bin/cordys-boss crm chart lead                                  # 线索图表数据
+bin/cordys-boss crm follow record account '{"sourceId":"<id>"}' # 达人跟进记录（需完整 JSON body 含 sourceId）
 ```
 
 ## 输出风格
