@@ -18,11 +18,13 @@ description: |
   - COO：履约效率、流程瓶颈、团队执行力、目标达成、损耗管控
   - CMO：达人生态、平台结构、增长质量、转化漏斗、客户生命周期
 
-  【报告能力（Webhook 交付）】
-  - 日报：30秒扫完的经营速览，至少 3 张图表
-  - 周报：3分钟掌握全貌带 to-do list，至少 8 张图表，含合同周数据
-  - 月报：10分钟深度经营复盘，至少 10 张图表
-  - 专题分析：按需提供，至少 4 张图表
+  【报告能力（双层交付）】
+  - 简报层（Webhook）：推送至飞书/钉钉/企微，30秒看完核心结论
+  - 报告层（HTML on COS）：可视化Dashboard，图表由Python生成上传COS
+  - 日报：简报+5张图表HTML报告
+  - 周报：简报+10张图表HTML报告，含合同周数据
+  - 月报：简报+12张图表HTML报告，深度经营复盘
+  - 专题分析：按需提供，可视化报告
   - 商务复盘：个人维度全方位分析
   - 达人深度分析：单客户 GMV/成本/合作周期全景
 ---
@@ -266,6 +268,16 @@ bin/cordys-boss home-stat department-tree               # 部门权限树
 
 报告不是汇报工作，不是罗列数据，是让老板看完就知道该干什么。
 
+**分析链条（每个角色的每条洞察必须走完）：**
+```
+数据事实 → 原因诊断 → 影响评估 → 行动建议
+```
+
+- **数据事实**：API 返回的真实数据，带对比（环比/同比）
+- **原因诊断**：为什么出现这个数字？交叉关联多维度数据
+- **影响评估**：如果不处理，X天后会怎样？量化影响
+- **行动建议**：具体到「谁+做什么+什么时候+预期效果」
+
 ### Webhook 交付设计
 
 报告通过 webhook 推送到飞书/钉钉/企业微信，必须：
@@ -296,16 +308,28 @@ bin/cordys-boss home-stat department-tree               # 部门权限树
 ✅ 建议：本周周会优先复盘成本 Top3 商务的达人转化效率
 ```
 
-### 可视化要求
+### 可视化要求（双层）
 
-所有报告**必须**包含可视化数据图表，具体规范详见 `prompts/visualization-rules.md`：
-- 日报至少 3 张图表
-- 周报至少 8 张图表
-- 月报至少 10 张图表
-- 图表用 Markdown 代码块包裹，确保等宽对齐
-- 用 `█░` 画条形图，emoji 做状态指示
-- 每张图表必须附带一句话结论
-- **不用 ASCII 框线艺术**（`━━╔══║` 在移动端会错位）
+**简报层**（Webhook 推送）：
+- 用 Markdown 表格展示核心指标
+- 可用 `█░` 条形图展示销售层级分布等关键分布
+- emoji 做状态指示（🟢🟡🔴）
+- 不用 ASCII 框线艺术
+- 规范详见 `prompts/visualization-rules.md`
+
+**报告层**（HTML on COS）：
+- 图表由 Python matplotlib 生成 PNG，上传腾讯云 COS
+- HTML 报告引用图表 COS URL，HTML 文件也上传 COS
+- 设计规范详见 `prompts/html-report-design.md`
+- 图表生成规范详见 `prompts/chart-generation.md`
+- 日报 5 张图表 / 周报 10 张 / 月报 12 张
+- 每张图表必须附带分析洞察（判断，非复述）
+
+**必须关注的分析维度**：
+1. **销售层级分布**：CRM 客户表单中的销售额层级，每层客户数量和占比变化
+2. **寄样执行情况**：工单状态漏斗、寄样完成率、待处理积压
+3. **客户新增与跟进**：新增趋势、跟进覆盖率、长期未跟进预警
+4. **商务人效**：成本排名、投入产出比、ROI 四象限
 
 ### 输出结构（倒金字塔）
 
@@ -334,11 +358,21 @@ bin/cordys-boss home-stat department-tree               # 部门权限树
 
 ## 报告模板
 
-详见 `prompts/report-templates.md`，所有报告按倒金字塔结构设计，通过 webhook 推送：
-- **日报**（30秒）：结论 + 关键数字 + 今日必须盯
-- **周报**（3分钟）：目标进度 + 核心指标 + 风险 + 投入产出 + 履约 + 达人 + To-Do
-- **月报**（10分钟）：CEO 摘要 + 目标达成 + 四维度深度分析 + 下月策略
-- **专题**：商务复盘、平台分析、达人深度分析
+详见 `prompts/report-templates.md`，所有报告采用双层交付：
+
+**Webhook 简报**（倒金字塔，手机3屏内看完）：
+- 一句话经营判断 → 核心指标表格 → 必须盯的事 → HTML报告链接
+
+**HTML 完整报告**（COS 托管，四角色可视化分析）：
+- 核心指标卡片网格 → 执行摘要 → CEO/CFO/COO/CMO 四板块
+- 每板块含图表+分析洞察+行动建议
+- 图表由 Python 生成，托管在腾讯云 COS
+
+| 报告类型 | 简报阅读 | API调用 | 图表数 |
+|:---------|:---------|:------:|:------:|
+| 日报 | 30秒 | 8个 | 5张 |
+| 周报 | 3分钟 | 12个 | 10张 |
+| 月报 | 10分钟 | 14个 | 12张 |
 
 ### 周报合同数据核心规则
 
@@ -474,8 +508,10 @@ CRM 模块支持动态时间常量（在 `combineSearch.conditions` 中使用）
 - `prompts/role-cfo.md` — CFO 角色分析框架
 - `prompts/role-coo.md` — COO 角色分析框架
 - `prompts/role-cmo.md` — CMO 角色分析框架
-- `prompts/visualization-rules.md` — 可视化数据分析规则
-- `prompts/report-templates.md` — 报告模板（日报/周报/月报）
+- `prompts/visualization-rules.md` — Webhook 简报可视化规则
+- `prompts/chart-generation.md` — Python 图表生成规范（matplotlib + COS）
+- `prompts/html-report-design.md` — HTML 报告设计系统（mobile-first / zero-dep）
+- `prompts/report-templates.md` — 报告模板（日报/周报/月报，含 API 清单与双层交付结构）
 - `prompts/boss-insight-rules.md` — 洞察输出规则
 - `prompts/risk-scan-rules.md` — 风险巡检规则
 

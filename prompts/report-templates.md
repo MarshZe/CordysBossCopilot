@@ -1,1167 +1,705 @@
-# 报告模板
+# 报告模板系统
+
+> 配套文件：`chart-generation.md`（图表生成规范）、`html-report-design.md`（HTML设计系统）
 
 ## 设计原则
 
-### 第一性原理：报告存在的唯一目的是帮老板做出更好的经营决策
+1. **双层交付**：Webhook 简报（30秒看完） + HTML 完整报告（可视化分析）
+2. **数据真实**：所有数值**必须**来自 API 返回，禁止编造、估算、占位
+3. **决策导向**：每个数据点背后是判断，每个判断背后是行动建议
+4. **第一性原理**：不做表面数据罗列，追问"为什么"和"所以呢"
+5. **移动友好**：简报在手机竖屏 3 屏内看完；HTML 报告移动端优先
 
-不是汇报工作，不是罗列数据，是**让老板看完就知道该干什么**。
+## 交付架构
 
-### 完整性原则
-
-每份报告必须覆盖公司经营的**全部关键维度**，缺一不可：
-
-| 维度 | 老板关心什么 | 数据来源 |
-|------|------------|---------|
-| 💰 GMV（收入） | 合同签了多少钱 | `crm statistic contract` + `crm page contract` |
-| 📦 工单（履约） | 样品寄出去了多少，回收了没有，超期了没有 | `analysis order-overview` + `sample-order page` |
-| 💸 成本（投入） | 花了多少钱，花在谁身上，ROI 多少 | `analysis order-cost` |
-| 🌱 达人（资产） | 达人多少个，质量怎么样，在增长吗 | `analysis customer-overview` + `customer-portrait` |
-| 🎯 目标（进度） | 月度目标到哪了，谁在前谁在后 | `target home` + `team` + `ranking` |
-| 🔻 漏斗（效率） | 线索→客户→商机→合同，卡在哪里 | `home-stat lead/opportunity/opportunity-success` |
-| 🤝 跟进（活跃度） | 商务团队在跟进达人吗，覆盖率多少 | `analysis customer-overview` → `followed` 卡片 |
-
-**如果任何一个维度的数据获取失败，在报告中标注"⚠️ 数据获取失败"，不要跳过这个维度。**
-
-### 数据口径纪律（必须遵守）
-
-以下是容易出错的数据口径，**错误使用会导致报告误导老板**：
-
-| 指标名称 | 正确数据来源 | ❌ 错误用法 |
-|---------|------------|-----------|
-| 已跟进达人数 | `analysis customer-overview` → `statCards.followed` | 不要用客户列表的 `latestFollowUpTime` 字段（该字段永远为 null，是后端已知 bug） |
-| 跟进覆盖率 | `followed.ratio`（来自 customer-overview） | 不要自己数客户列表中 `latestFollowUpTime` 非 null 的比例 |
-| 最近跟进时间 | 客户列表的 `followTime` 字段 | 不要用 `latestFollowUpTime`（永远 null） |
-| 跟进活跃度 | 用"已跟进达人 X 人（覆盖率 X%）" | 不要用"跟进记录 X 条"（当前无聚合接口获取跟进记录总条数） |
-
-**核心规则：`latestFollowUpTime` 字段已废弃（后端未实现映射），所有跟进时间判断必须使用 `followTime`。**
-
-### Webhook 交付约束
-
-- **手机优先**：一屏看到核心结论
-- **Markdown 渲染**：用加粗、emoji、表格、代码块
-- **不用 ASCII 框线艺术**：`━━╔══` 在移动端会错位
-- **倒金字塔**：先结论再证据再详情
+```
+┌─────────────────────────┐
+│   Webhook 简报（文本）    │  ← 推送至飞书/钉钉/企微
+│   · 一句话总结            │  ← 老板30秒决策
+│   · 4-6个核心指标         │  ← 数字+趋势+状态
+│   · 2-3条必须盯的事       │  ← 风险+行动
+│   · HTML报告链接          │  ← 点击查看详情
+└───────────┬─────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│   HTML 完整报告（COS）    │  ← 可视化Dashboard
+│   · 核心指标卡片          │
+│   · 执行摘要              │
+│   · CEO/CFO/COO/CMO板块  │
+│   · 每板块含图表+分析+建议│
+│   · 图表由Python生成      │
+└─────────────────────────┘
+```
 
 ---
 
-## 每日经营速览
+## CLI 调用约束（所有报告必读）
 
-> 目标：老板早上打开手机，30 秒内知道今天该盯什么
+**`bin/cordys-boss` 不支持 `--range` 等命令行 flag。** 时间范围通过 JSON body 传递：
 
-### 必须调用的 API（全部调用，不可跳过）
+- **analysis 命令**：通过 `granularity` 字段控制时间范围
+  ```bash
+  cordys-boss analysis customer-overview '{"granularity":"TODAY"}'
+  cordys-boss analysis order-cost '{"granularity":"WEEK"}'
+  cordys-boss analysis customer-overview '{"granularity":"LAST_WEEK"}'
+  ```
+- **不传 JSON 时**：默认 `granularity: MONTH`
+- **crm statistic 命令**：通过 `combineSearch.conditions` 传递时间筛选
+  ```bash
+  cordys-boss crm statistic contract '{"combineSearch":{"searchMode":"AND","conditions":[{"value":"WEEK","operator":"DYNAMICS","name":"createTime","multipleValue":false,"type":"TIME_RANGE_PICKER"}]}}'
+  ```
+- **home-stat / target 命令**：接受可选 JSON，不传则用默认参数
 
-```bash
-# 1. 达人数据
-bin/cordys-boss analysis customer-overview                  # 达人总量/新增/跟进
-bin/cordys-boss analysis customer-portrait                  # 等级分布/平台分布
+---
 
-# 2. 工单数据
-bin/cordys-boss analysis order-overview                     # 工单总览/状态分布/超期
-bin/cordys-boss sample-order page                           # 最新工单列表
+## 一、日报
 
-# 3. 成本数据
-bin/cordys-boss analysis order-cost                         # 成本总览/商务排名/产品排名
+### 必须调用的 API（共 8 个）
 
-# 4. 合同数据
-bin/cordys-boss crm statistic contract                      # 合同统计
-bin/cordys-boss crm page contract '{"combineSearch":{"searchMode":"AND","conditions":[{"value":"TODAY","operator":"DYNAMICS","name":"createTime","multipleValue":false,"type":"TIME_RANGE_PICKER"}]}}'  # 今日新签
+| # | 命令 | 用途 | 关键字段 |
+|:-:|:-----|:-----|:---------|
+| 1 | `cordys-boss analysis customer-overview '{"granularity":"TODAY"}'` | 今日达人概况 | statCards(total, newThisMonth, abLevel, followed), growthTrend |
+| 2 | `cordys-boss analysis customer-overview` | 本月达人概况（默认MONTH） | statCards(total, newThisMonth, followed) |
+| 3 | `cordys-boss analysis customer-portrait` | 客户画像分布（默认MONTH） | salesTierDistribution, levelDistribution, platformDistribution |
+| 4 | `cordys-boss analysis order-overview '{"granularity":"TODAY"}'` | 今日工单概况 | statCards(total, newThisMonth, shipped, pending), statusFunnel |
+| 5 | `cordys-boss analysis order-overview` | 本月工单概况（默认MONTH） | statCards, orderTrend |
+| 6 | `cordys-boss analysis order-cost` | 本月成本分析（默认MONTH） | statCards(totalCost, avgPerOwner, avgPerOrder), ownerCostRanking |
+| 7 | `cordys-boss home-stat lead` | 线索统计 | todayClue, thisWeekClue, thisMonthClue |
+| 8 | `cordys-boss home-stat opportunity` | 商机统计 | todayOpportunityCount, thisMonthOpportunityAmount |
 
-# 5. 目标数据
-bin/cordys-boss target home                                 # 目标摘要
-bin/cordys-boss target ranking                              # 排名
+### 日报需生成的图表（共 5 张）
 
-# 6. 漏斗数据
-bin/cordys-boss home-stat lead                              # 线索统计
-bin/cordys-boss home-stat opportunity                       # 商机统计
-bin/cordys-boss home-stat opportunity-success                # 赢单统计
-```
+| 图表 | 类型 | 数据来源 | 文件名 |
+|:-----|:-----|:---------|:-------|
+| 销售层级分布 | 水平条形图 | customer-portrait.salesTierDistribution | sales-tier.png |
+| 工单状态分布 | 水平条形图 | order-overview.statusFunnel | order-status.png |
+| 达人等级分布 | 环形图 | customer-portrait.levelDistribution | level-distribution.png |
+| 平台分布 | 水平条形图 | customer-portrait.platformDistribution | platform-distribution.png |
+| 商务成本排名 | 水平条形图 | order-cost.ownerCostRanking | owner-cost-top.png |
 
-### 日报模板
+### Webhook 简报模板
 
 ```markdown
-# 📋 经营日报 · MM月DD日 周X
+# 📋 经营日报 · {{MM月DD日}} {{周X}}
 
-> 💡 **今日一句话**：[今天最需要老板知道的一件事]
+> 💡 {{一句话经营判断：基于今日数据的核心结论，15字以内}}
 
----
+📊 **核心指标**
 
-## 🏢 CEO视角：经营总览
+| 指标 | 数值 | 环比 | 状态 |
+|:-----|-----:|-----:|:----:|
+| 达人总量 | {{total}}人 | {{vs昨日}} | {{🟢🟡🔴}} |
+| 本月新增 | {{newThisMonth}}人 | {{vs上月同期}} | {{🟢🟡🔴}} |
+| 今日跟进 | {{followed}}人 | — | {{🟢🟡🔴}} |
+| 在途工单 | {{pending}}单 | {{vs昨日}} | {{🟢🟡🔴}} |
+| 已发货 | {{shipped}}单 | {{vs昨日}} | {{🟢🟡🔴}} |
+| 本月样品成本 | {{totalCost}}万 | {{vs上月}} | {{🟢🟡🔴}} |
 
-### 经营健康度仪表盘
+⚠️ **今日必须盯**
 
-```
-📏 GMV（本月）    ████████████░░░░░░░░  XX.X万  较上月同期 +X%
-📏 达人总量      ██████████████████░░  XXX人   较昨日 +X
-📏 投入产出比    ████████████████░░░░  1:X.X   健康线 1:4
-📏 履约效率      ████████████░░░░░░░░  XX%     超期率 X%
-```
+1. {{最紧急的事}} — {{数据依据}} — **建议：{{行动}}**
+2. {{第二紧急的事}} — {{数据依据}} — **建议：{{行动}}**
 
-### 今日核心指标
+📈 **今日亮点**
 
-| 维度 | 今日 | 较昨日 | 本月累计 | 判断 |
-|:-----|-----:|:------:|--------:|:----:|
-| GMV（合同金额） | **X.X万** | +X% | XX.X万 | 🟢 |
-| 新增达人 | **X人** | +N | XX人 | 🟢 |
-| 在途工单 | **X单** | +N | — | 🟡 |
-| 超期工单 | **X单** | +N | — | 🔴 |
-| 今日ROI | **1:X.X** | — | 1:X.X | 🟢 |
+- {{正面发现1}}
+- {{正面发现2}}
 
-**CEO判断**：[一句话经营态势判断，指出最需关注的问题]
+📎 [查看完整可视化报告]({{HTML_REPORT_URL}})
 
 ---
-
-## 💰 CFO视角：成本与投入产出
-
-### 今日样品监控
-
-```
-📦 今日寄样情况
-
-寄样单数    ██████░░░░░░░░░░░░░░░░  X单    较昨日：+N/-N  🟢
-寄样成本    ████░░░░░░░░░░░░░░░░░░  X.X万  单均：X元      🟡
-在途累计    ████████████░░░░░░░░░░  XX单   需关注回收     🟡
-
-今日ROI：1:X.X ｜ 本月累计：1:X.X ｜ 安全线：1:4
+🤖 CordysBossCopilot · 数据截至 {{HH:MM}}
 ```
 
-### 成本结构
+### HTML 完整报告结构（日报）
 
 ```
-📊 今日成本 Top3 商务
-
-[名1]  ██████████████████████████████  X.X万  GMV XX万  1:XX
-[名2]  █████████████████░░░░░░░░░░░░  X.X万  GMV XX万  1:X
-[名3]  ██████████░░░░░░░░░░░░░░░░░░░  X.X万  GMV XX万  1:XX
-
-Top3 占总成本 XX% ｜ 数据完整度 XX%
-```
-
-**CFO判断**：[今日成本是否可控，投入产出是否健康，有无异常]
-
----
-
-## 📦 COO视角：履约与执行力
-
-### 工单状态分布
-
-```
-📊 工单状态
-
-待处理   ████████░░░░░░░░░░░░  X单
-处理中   ██████████████░░░░░░  X单
-待回收   ████████████░░░░░░░░  X单  ⚠️
-超期     ████░░░░░░░░░░░░░░░░  X单  🔴
-已完成   ██████████████████░░  X单
-```
-
-### 今日工单动态
-
-| 状态 | 今日新增 | 今日完成 | 累计在途 | 风险等级 |
-|:-----|--------:|--------:|--------:|:--------:|
-| 待处理 | X单 | — | X单 | 🟢 |
-| 处理中 | X单 | X单 | X单 | 🟡 |
-| 待回收 | X单 | X单 | X单 | 🟡 |
-| 超期 | X单 | X单 | X单 | 🔴 |
-
-**COO判断**：[工单流转效率判断，执行瓶颈点]
-
----
-
-## 🌱 CMO视角：达人生态与增长
-
-### 今日增长洞察
-
-| 指标 | 今日 | 较昨日 | 本月累计 | 质量判断 |
-|:-----|-----:|:------:|--------:|:--------:|
-| 新增达人 | **X人** | +N | XX人 | — |
-| A级新增 | **X人** | +N | XX人 | 🟢 |
-| B级新增 | **X人** | +N | XX人 | 🟢 |
-| 跟进覆盖 | **XX%** | +X% | XX% | 🟡 |
-
-### 客户质量分层（本月新增）
-
-```
-📊 新增客户GMV分层
-
-300万+     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0人    0%   战略客户
-100-300万  ████░░░░░░░░░░░░░░░░░░░░░░░░░░  1人    8%   核心资产
-50-100万   ████████░░░░░░░░░░░░░░░░░░░░░░  2人   17%   高价值
-20-50万    ████████████░░░░░░░░░░░░░░░░░░  3人   25%   成长型
-<20万      ████████████████████████░░░░░░  6人   50%   孵化型
-
-高价值客户占比(50万+)：25%  [健康/需提升]
-```
-
-**CMO判断**：[今日拓新质量判断，增长健康度]
-
----
-
-## ⚠️ 今日必须盯
-
-**CEO视角**
-1. **[风险]** — [数据依据] — [资源调配建议]
-
-**CFO视角**
-2. **[成本]** — [异常数据] — [预算控制建议]
-
-**COO视角**
-3. **[执行]** — [工单状态] — [流程优化建议]
-
-**CMO视角**
-4. **[增长]** — [达人数据] — [拓新策略建议]
-
----
-
-🤖 CordysBossCopilot 高管顾问团 · 自动推送
+├── 头部（日报标题 + 日期 + 一句话判断）
+├── 核心指标卡片（2×3 网格）
+│   ├── 达人总量（total + 环比）
+│   ├── 本月新增（newThisMonth + 环比）
+│   ├── 跟进覆盖率（followed/total 百分比）
+│   ├── 在途工单（pending）
+│   ├── 已发货（shipped）
+│   └── 本月样品成本（totalCost，注意分→万换算）
+├── 执行摘要（3-5条要点，红/黄/绿标识）
+├── CEO 板块
+│   ├── 【图表】销售层级分布（sales-tier.png）
+│   │   └── 洞察：各层级客户数量变化趋势和结构健康度
+│   ├── 经营健康度评估
+│   └── 建议卡（1-2条）
+├── CFO 板块
+│   ├── 【图表】商务成本排名（owner-cost-top.png）
+│   │   └── 洞察：成本集中度分析，人效差异
+│   ├── 本月预算执行情况
+│   └── 建议卡（1-2条）
+├── COO 板块
+│   ├── 【图表】工单状态分布（order-status.png）
+│   │   └── 洞察：待处理积压是否超标，寄样效率
+│   ├── 执行效率评估
+│   │   ├── 寄样完成率 = shipped / (shipped + pending) × 100%
+│   │   ├── 待处理积压 = pending 数量
+│   │   └── 跟进覆盖率 = followed / total × 100%
+│   └── 建议卡（1-2条）
+├── CMO 板块
+│   ├── 【图表】达人等级分布（level-distribution.png）
+│   │   └── 洞察：A+B级占比变化
+│   ├── 【图表】平台分布（platform-distribution.png）
+│   │   └── 洞察：平台集中度风险
+│   ├── 新增达人渠道分析
+│   └── 建议卡（1-2条）
+└── 页脚
 ```
 
 ---
 
-## 周报
+## 二、周报
 
-> 目标：老板 3 分钟内掌握本周经营全貌，带着清晰的 to-do list 进周会
+### 必须调用的 API（共 12 个）
 
-### 必须调用的 API（全部调用，不可跳过）
+| # | 命令 | 用途 | 关键字段 |
+|:-:|:-----|:-----|:---------|
+| 1 | `cordys-boss analysis customer-overview '{"granularity":"WEEK"}'` | 本周达人概况 | statCards, growthTrend, cumulativeTrend |
+| 2 | `cordys-boss analysis customer-overview '{"granularity":"LAST_WEEK"}'` | 上周达人概况 | statCards（用于环比计算） |
+| 3 | `cordys-boss analysis customer-portrait '{"granularity":"WEEK"}'` | 本周客户画像 | salesTierDistribution, levelDistribution, platformDistribution, platformLevelMatrix |
+| 4 | `cordys-boss analysis customer-portrait '{"granularity":"LAST_WEEK"}'` | 上周客户画像 | salesTierDistribution（用于层级环比） |
+| 5 | `cordys-boss analysis order-overview '{"granularity":"WEEK"}'` | 本周工单概况 | statCards, statusFunnel, orderTrend |
+| 6 | `cordys-boss analysis order-overview '{"granularity":"LAST_WEEK"}'` | 上周工单概况 | statCards（用于环比） |
+| 7 | `cordys-boss analysis order-cost '{"granularity":"WEEK"}'` | 本周成本分析 | statCards, ownerCostRanking, costTrend, purposeDistribution |
+| 8 | `cordys-boss analysis order-cost '{"granularity":"LAST_WEEK"}'` | 上周成本分析 | statCards（用于环比） |
+| 9 | `cordys-boss home-stat lead` | 线索统计 | thisWeekClue, thisMonthClue |
+| 10 | `cordys-boss home-stat opportunity` | 商机统计 | thisWeekOpportunityCount/Amount, thisMonthOpportunityCount/Amount |
+| 11 | `cordys-boss target home` | 目标进度 | myTarget, teamSummary, customerTopN, contractTopN, alerts |
+| 12 | `cordys-boss crm statistic contract '{"combineSearch":{"searchMode":"AND","conditions":[{"value":"WEEK","operator":"DYNAMICS","name":"createTime","multipleValue":false,"type":"TIME_RANGE_PICKER"}]}}'` | 本周合同统计 | amount, averageAmount |
 
-```bash
-# ─── 第一组：经营分析数据（周度粒度） ───
-bin/cordys-boss analysis customer-overview '{"granularity":"WEEK"}'   # 达人概览
-bin/cordys-boss analysis customer-portrait '{"granularity":"WEEK"}'   # 达人画像
-bin/cordys-boss analysis order-overview '{"granularity":"WEEK"}'      # 工单概览
-bin/cordys-boss analysis order-cost '{"granularity":"WEEK"}'          # 成本分析
+### 环比计算规则
 
-# ─── 第二组：合同（GMV）数据 ───
-# 本周活跃合同（开始或结束时间在本周）
-bin/cordys-boss crm page contract '{"combineSearch":{"searchMode":"OR","conditions":[{"value":"WEEK","operator":"DYNAMICS","name":"startTime","multipleValue":false,"type":"TIME_RANGE_PICKER"},{"value":"WEEK","operator":"DYNAMICS","name":"endTime","multipleValue":false,"type":"TIME_RANGE_PICKER"}]}}'
-# 本周新签合同
-bin/cordys-boss crm page contract '{"combineSearch":{"searchMode":"AND","conditions":[{"value":"WEEK","operator":"DYNAMICS","name":"createTime","multipleValue":false,"type":"TIME_RANGE_PICKER"}]}}'
-# 合同整体统计
-bin/cordys-boss crm statistic contract
+**重要**：`StatCardItem.previousValue` 在当前后端实现中为 `null`，环比必须通过对比两个时间段的数据手动计算：
 
-# ─── 第三组：目标管理 ───
-bin/cordys-boss target home                                           # 目标摘要
-bin/cordys-boss target team                                           # 团队目标
-bin/cordys-boss target ranking                                        # 排名
-
-# ─── 第四组：漏斗数据 ───
-bin/cordys-boss home-stat lead                                        # 线索统计
-bin/cordys-boss home-stat opportunity                                 # 商机统计
-bin/cordys-boss home-stat opportunity-success                         # 赢单统计
-
-# ─── 第五组：商机统计 ───
-bin/cordys-boss crm statistic opportunity                             # 商机统计
-
-# ─── 第六组：客户图表（可选增强） ───
-bin/cordys-boss crm chart account                                     # 客户图表
+```
+环比变化率 = (本期值 - 上期值) / 上期值 × 100%
 ```
 
-### 周报模板
+对于每个需要环比的指标，必须同时调用本期和上期的 API。
+
+### 周报需生成的图表（共 10 张）
+
+| 图表 | 类型 | 数据来源 | 文件名 |
+|:-----|:-----|:---------|:-------|
+| 销售层级分布 | 水平条形图 | customer-portrait.salesTierDistribution | sales-tier.png |
+| 达人等级分布 | 环形图 | customer-portrait.levelDistribution | level-distribution.png |
+| 平台分布 | 水平条形图 | customer-portrait.platformDistribution | platform-distribution.png |
+| 平台×等级热力图 | 热力图 | customer-portrait.platformLevelMatrix | platform-level-heatmap.png |
+| 达人增长趋势 | 柱线混合 | customer-overview.growthTrend + cumulativeTrend | customer-growth.png |
+| 工单状态漏斗 | 水平条形图 | order-overview.statusFunnel | order-status.png |
+| 工单量趋势 | 折线图 | order-overview.orderTrend | order-trend.png |
+| 商务成本排名 | 水平条形图 | order-cost.ownerCostRanking | owner-cost-top.png |
+| 成本趋势 | 折线图 | order-cost.costTrend | cost-trend.png |
+| 转化漏斗 | 水平条形图 | home-stat lead + opportunity 组合 | conversion-funnel.png |
+
+### Webhook 简报模板
 
 ```markdown
-# 📊 经营周报 · MM/DD—MM/DD · 第XX周
+# 📊 经营周报 · {{MM月DD日}}-{{MM月DD日}} 第{{N}}周
 
-> 💡 **本周一句话**：[最重要的经营判断，直接指向该干什么]
+> 💡 {{一句话本周总结：核心结论，20字以内}}
+
+📈 **本周 vs 上周**
+
+| 指标 | 本周 | 上周 | 环比 | 状态 |
+|:-----|-----:|-----:|-----:|:----:|
+| 达人总量 | {{total}}人 | {{上周total}} | {{变化率}} | {{🟢🟡🔴}} |
+| 新增达人 | {{新增}}人 | {{上周新增}} | {{变化率}} | {{🟢🟡🔴}} |
+| 跟进覆盖率 | {{率}}% | {{上周率}}% | {{变化}} | {{🟢🟡🔴}} |
+| 工单量 | {{total}}单 | {{上周total}} | {{变化率}} | {{🟢🟡🔴}} |
+| 寄样完成率 | {{率}}% | {{上周率}}% | {{变化}} | {{🟢🟡🔴}} |
+| 样品成本 | {{cost}}万 | {{上周cost}} | {{变化率}} | {{🟢🟡🔴}} |
+| 商机金额 | {{金额}}万 | {{上周金额}} | {{变化率}} | {{🟢🟡🔴}} |
+
+📊 **销售层级分布**（客户质量结构）
+
+{{用 visualization-rules.md 中的占比分布图格式展示 salesTierDistribution}}
+
+⚠️ **本周需要关注**
+
+1. {{风险1}} — {{依据}} — **建议：{{行动}}**
+2. {{风险2}} — {{依据}} — **建议：{{行动}}**
+3. {{风险3}} — {{依据}} — **建议：{{行动}}**
+
+✅ **本周亮点**
+
+1. {{亮点1}}
+2. {{亮点2}}
+
+📎 [查看完整可视化报告]({{HTML_REPORT_URL}})
+
+---
+🤖 CordysBossCopilot · {{日期}} 周报
+```
+
+### HTML 完整报告结构（周报）
+
+```
+├── 头部（周报标题 + 周期 + 一句话判断）
+├── 核心指标卡片（2×4 网格）
+│   ├── 达人总量（total + 环比）
+│   ├── 本周新增（newThisMonth + 环比）
+│   ├── 跟进覆盖率（followed/total % + 环比）
+│   ├── 工单总量（total + 环比）
+│   ├── 寄样完成率（shipped/(shipped+pending) % + 环比）
+│   ├── 样品总成本（totalCost + 环比，分→万）
+│   ├── 人均成本（avgPerOwner + 环比，分→万）
+│   └── 商机金额（opportunityAmount + 环比）
+├── 执行摘要（5-8条要点）
+│
+├── CEO 板块 · 战略全局
+│   ├── 【图表】销售层级分布（sales-tier.png）
+│   │   └── 洞察：各层级客户数量 + 与上周对比 + 结构健康度判断
+│   ├── 【图表】转化漏斗（conversion-funnel.png）
+│   │   └── 洞察：最大断裂点分析 + 转化率趋势
+│   ├── 经营风险评估（红/黄/绿三色）
+│   │   ├── 增长维度：客户增速 vs 目标
+│   │   ├── 效率维度：人效指标
+│   │   ├── 结构维度：客户质量分层
+│   │   └── 履约维度：工单完成率
+│   ├── 建议卡 · 本周战略决策
+│   │   ├── action: 最高优先级的事
+│   │   ├── risk: 需要预防的风险
+│   │   └── opportunity: 发现的机会
+│   └── 目标进度（如有 target 数据）
+│
+├── CFO 板块 · 财务效率
+│   ├── 【图表】商务成本排名（owner-cost-top.png）
+│   │   └── 洞察：成本 Top3 集中度 + 人效差异
+│   ├── 【图表】成本趋势（cost-trend.png）
+│   │   └── 洞察：成本变化趋势 + 预算执行率
+│   ├── 商务人效分析表
+│   │   ├── 表格：商务姓名 | 样品成本 | 客户数 | 单客成本 | 状态
+│   │   └── 洞察：人效差异的根因（是客户质量差异还是资源分配不均）
+│   ├── 建议卡 · 成本优化
+│   │   ├── 需要加码的商务（高效率）
+│   │   └── 需要复盘的商务（低效率）
+│   └── 合同金额统计
+│
+├── COO 板块 · 运营执行
+│   ├── 【图表】工单状态漏斗（order-status.png）
+│   │   └── 洞察：积压量趋势 + 是否需要干预
+│   ├── 【图表】工单量趋势（order-trend.png）
+│   │   └── 洞察：工单量变化 + 是否有季节性波动
+│   ├── 寄样执行看板
+│   │   ├── 寄样完成率 = shipped / (shipped + pending) × 100%
+│   │   ├── 待发货积压 = pending 绝对值 + 环比
+│   │   ├── 平均处理时长（如可获取）
+│   │   └── 洞察：瓶颈在哪个环节
+│   ├── 客户跟进覆盖分析
+│   │   ├── 跟进覆盖率 = followed / total × 100%
+│   │   ├── 未跟进客户数 = total - followed
+│   │   └── 洞察：哪些客户长期未跟进，潜在风险
+│   ├── 建议卡 · 执行优化
+│   │   └── 具体到人和时间的执行计划
+│   └── followTime 字段说明
+│       └── 注意：跟进数据使用 followTime 字段，不使用 latestFollowUpTime（后端bug）
+│
+├── CMO 板块 · 市场增长
+│   ├── 【图表】达人等级分布（level-distribution.png）
+│   │   └── 洞察：A+B级占比变化 + 结构优化方向
+│   ├── 【图表】平台分布（platform-distribution.png）
+│   │   └── 洞察：平台集中度 + 风险评估
+│   ├── 【图表】平台×等级热力图（platform-level-heatmap.png）
+│   │   └── 洞察：哪个平台的高价值达人密度最高
+│   ├── 【图表】达人增长趋势（customer-growth.png）
+│   │   └── 洞察：增长是在加速还是放缓
+│   ├── 客户结构健康度评估
+│   │   ├── salesTierDistribution 各层级数量 + 占比
+│   │   ├── 高价值客户占比趋势
+│   │   └── 洞察：客户资产在升值还是贬值
+│   ├── 建议卡 · 增长策略
+│   │   ├── 客户开发重点方向
+│   │   ├── 平台布局调整建议
+│   │   └── 达人升级培育计划
+│   └── 线索转化分析
+│
+└── 页脚
+```
 
 ---
 
-## 🏢 CEO视角：经营健康度与战略判断
+## 三、月报
 
-### 核心经营指标对比
+### 必须调用的 API（共 14 个）
 
-| 维度 | 本周 | 上周 | 环比 | 本月累计 | 历史均值 | 判断 |
-|:-----|-----:|-----:|-----:|--------:|--------:|:----:|
-| GMV（合同金额） | **XX万** | XX万 | +X% | XX万 | XX万 | 🟢 |
-| 达人新增 | **X人** | X人 | +N | XX人 | XX人 | 🟢 |
-| 样品成本 | **X.X万** | X.X万 | +X% | XX.X万 | XX万 | 🟡 |
-| ROI | **1:X.X** | 1:X.X | — | 1:X.X | 1:X | 🟢 |
-| 超期率 | **X%** | X% | +X% | X% | X% | 🔴 |
+| # | 命令 | 用途 | 关键字段 |
+|:-:|:-----|:-----|:---------|
+| 1 | `cordys-boss analysis customer-overview` | 本月达人概况（默认MONTH） | statCards, growthTrend, cumulativeTrend |
+| 2 | `cordys-boss analysis customer-overview '{"granularity":"LAST_MONTH"}'` | 上月达人概况 | statCards（环比） |
+| 3 | `cordys-boss analysis customer-portrait` | 本月客户画像（默认MONTH） | salesTierDistribution, levelDistribution, platformDistribution, platformLevelMatrix |
+| 4 | `cordys-boss analysis customer-portrait '{"granularity":"LAST_MONTH"}'` | 上月客户画像 | 各分布数据（环比） |
+| 5 | `cordys-boss analysis order-overview` | 本月工单（默认MONTH） | statCards, statusFunnel, orderTrend |
+| 6 | `cordys-boss analysis order-overview '{"granularity":"LAST_MONTH"}'` | 上月工单 | statCards（环比） |
+| 7 | `cordys-boss analysis order-cost` | 本月成本（默认MONTH） | 全部字段（statCards, ownerCostRanking, costTrend, purposeDistribution） |
+| 8 | `cordys-boss analysis order-cost '{"granularity":"LAST_MONTH"}'` | 上月成本 | statCards（环比） |
+| 9 | `cordys-boss home-stat lead` | 线索统计 | thisMonthClue, thisYearClue |
+| 10 | `cordys-boss home-stat opportunity` | 商机统计 | thisMonthOpportunity*, thisYearOpportunity* |
+| 11 | `cordys-boss target home` | 目标进度 | 全部字段 |
+| 12 | `cordys-boss crm statistic contract '{"combineSearch":{"searchMode":"AND","conditions":[{"value":"MONTH","operator":"DYNAMICS","name":"createTime","multipleValue":false,"type":"TIME_RANGE_PICKER"}]}}'` | 本月合同统计 | amount, averageAmount |
+| 13 | `cordys-boss crm statistic contract '{"combineSearch":{"searchMode":"AND","conditions":[{"value":"LAST_MONTH","operator":"DYNAMICS","name":"createTime","multipleValue":false,"type":"TIME_RANGE_PICKER"}]}}'` | 上月合同统计 | amount, averageAmount（环比） |
+| 14 | `cordys-boss analysis order-cost '{"granularity":"WEEK"}'` | 周度成本趋势 | costTrend（周粒度） |
 
-### 经营健康度仪表盘
+### 月报需生成的图表（共 12 张）
+
+| 图表 | 类型 | 数据来源 | 文件名 |
+|:-----|:-----|:---------|:-------|
+| 销售层级分布 | 水平条形图 | customer-portrait.salesTierDistribution | sales-tier.png |
+| 达人等级分布 | 环形图 | customer-portrait.levelDistribution | level-distribution.png |
+| 平台分布 | 水平条形图 | customer-portrait.platformDistribution | platform-distribution.png |
+| 平台×等级热力图 | 热力图 | customer-portrait.platformLevelMatrix | platform-level-heatmap.png |
+| 达人增长趋势 | 柱线混合 | customer-overview.growthTrend + cumulativeTrend | customer-growth.png |
+| 工单状态漏斗 | 水平条形图 | order-overview.statusFunnel | order-status.png |
+| 工单量趋势 | 折线图 | order-overview.orderTrend | order-trend.png |
+| 商务成本排名 | 水平条形图 | order-cost.ownerCostRanking | owner-cost-top.png |
+| 成本趋势（周度） | 折线图 | order-cost.costTrend（周粒度） | cost-trend-weekly.png |
+| 成本用途分布 | 环形图 | order-cost.purposeDistribution | cost-purpose.png |
+| 转化漏斗 | 水平条形图 | home-stat lead + opportunity 组合 | conversion-funnel.png |
+| ROI 四象限 | 散点图 | order-cost.ownerCostRanking + contract | roi-quadrant.png |
+
+### Webhook 简报模板
+
+```markdown
+# 📊 经营月报 · {{YYYY年MM月}}
+
+> 💡 {{一句话月度总结：本月经营核心结论}}
+
+📈 **月度核心指标**
+
+| 指标 | 本月 | 上月 | 环比 | 状态 |
+|:-----|-----:|-----:|-----:|:----:|
+| 达人总量 | {{total}}人 | {{上月}} | {{率}} | {{🟢🟡🔴}} |
+| 新增达人 | {{新增}}人 | {{上月}} | {{率}} | {{🟢🟡🔴}} |
+| A+B级占比 | {{率}}% | {{上月}}% | {{变化}} | {{🟢🟡🔴}} |
+| 跟进覆盖率 | {{率}}% | {{上月}}% | {{变化}} | {{🟢🟡🔴}} |
+| 工单总量 | {{total}}单 | {{上月}} | {{率}} | {{🟢🟡🔴}} |
+| 寄样完成率 | {{率}}% | {{上月}}% | {{变化}} | {{🟢🟡🔴}} |
+| 样品总成本 | {{cost}}万 | {{上月}} | {{率}} | {{🟢🟡🔴}} |
+| 人均样品成本 | {{avg}}万 | {{上月}} | {{率}} | {{🟢🟡🔴}} |
+| 商机金额 | {{金额}}万 | {{上月}} | {{率}} | {{🟢🟡🔴}} |
+| 合同金额 | {{金额}}万 | {{上月}} | {{率}} | {{🟢🟡🔴}} |
+
+📊 **销售层级分布**
+
+{{用 visualization-rules.md 中的占比分布图格式展示 salesTierDistribution}}
+
+🏢 **CEO 核心判断**
+
+{{2-3句话的月度经营评价，聚焦增长质量和结构变化}}
+
+💰 **CFO 成本洞察**
+
+{{1-2句话的成本效率判断}}
+
+📦 **COO 执行评估**
+
+{{1-2句话的运营效率判断}}
+
+🌱 **CMO 增长评估**
+
+{{1-2句话的市场增长判断}}
+
+⚠️ **下月必须解决的问题**
+
+1. {{问题1}} — {{建议}}
+2. {{问题2}} — {{建议}}
+3. {{问题3}} — {{建议}}
+
+📎 [查看完整可视化报告]({{HTML_REPORT_URL}})
+
+---
+🤖 CordysBossCopilot · {{YYYY年MM月}} 月报
+```
+
+### HTML 完整报告结构（月报）
 
 ```
-📏 GMV增长      ████████████████░░░░  环比 +X%   [加速/放缓/稳定]
-📏 达人增长      ██████████████████░░  新增 X人   [健康/需提速]
-📏 投入产出      ████████████████░░░░  ROI 1:X.X  [健康/预警]
-📏 履约效率      ████████████░░░░░░░░  超期率 X%  [达标/需改进]
-📏 质量结构      ████████████████░░░░  高价值占比 XX% [优化中]
-```
-
-**CEO判断**：[一句话概括本周经营态势，指出最需关注的系统性问题]
-
-### 风险热力图
-
-```
-         履约  成本  结构  效率  增长
-严重度    🔴   🟡   🟢   🟡   🟢
-趋势      ↑    →    →    ↓    →
+├── 头部（月报标题 + 月份 + 一句话判断）
+├── 核心指标卡片（2×5 网格）
+│   ├── 达人总量 + 环比
+│   ├── 月新增达人 + 环比
+│   ├── A+B级占比 + 环比
+│   ├── 跟进覆盖率 + 环比
+│   ├── 工单总量 + 环比
+│   ├── 寄样完成率 + 环比
+│   ├── 样品总成本 + 环比
+│   ├── 人均样品成本 + 环比
+│   ├── 商机金额 + 环比
+│   └── 合同金额 + 环比
+├── 执行摘要（8-10条要点）
+│
+├── CEO 板块 · 战略全局与经营复盘
+│   ├── 【图表】销售层级分布（sales-tier.png）
+│   │   └── 洞察：月度层级迁移分析（哪些层级增长/流失了多少客户）
+│   ├── 【图表】转化漏斗（conversion-funnel.png）
+│   │   └── 洞察：全链路转化效率 + 最大瓶颈
+│   ├── 经营健康度雷达评估
+│   │   ├── 增长力：新增达人数环比 + 达成率
+│   │   ├── 质量度：A+B级占比 + 高价值客户占比
+│   │   ├── 效率度：人均产出 + 单客成本
+│   │   ├── 履约度：寄样完成率 + 跟进覆盖率
+│   │   └── 转化度：线索→商机→合同 转化率
+│   ├── 第一性原理分析
+│   │   ├── 根因分析：本月经营结果的底层驱动因素
+│   │   ├── 假设验证：上月的策略是否生效
+│   │   └── 趋势预判：按当前趋势，下月会怎样
+│   ├── 建议卡 · 下月战略方向（3条）
+│   └── 目标进度 + 差距分析
+│
+├── CFO 板块 · 财务效率与投产分析
+│   ├── 【图表】成本趋势-周度（cost-trend-weekly.png）
+│   │   └── 洞察：成本是在收敛还是发散
+│   ├── 【图表】成本用途分布（cost-purpose.png）
+│   │   └── 洞察：钱花在了哪，花得值不值
+│   ├── 【图表】商务成本排名（owner-cost-top.png）
+│   │   └── 洞察：人效差异的根因
+│   ├── 【图表】ROI 四象限（roi-quadrant.png）
+│   │   └── 洞察：每个商务的投产位置 + 策略建议
+│   ├── 商务人效分析表（完整版）
+│   │   ├── 表格：商务 | 样品成本 | 客户数 | 商机金额 | 合同金额 | ROI | 状态
+│   │   └── 洞察：最佳实践（效率最高的商务在做什么）
+│   ├── 预算执行分析
+│   │   ├── 月度预算 vs 实际支出
+│   │   ├── 按当前速率，季度预算可控性
+│   │   └── 建议：预算调整方向
+│   └── 建议卡 · 下月成本策略（2-3条）
+│
+├── COO 板块 · 运营效率与执行力
+│   ├── 【图表】工单状态漏斗（order-status.png）
+│   │   └── 洞察：月度工单处理效率
+│   ├── 【图表】工单量趋势（order-trend.png）
+│   │   └── 洞察：工单量趋势 + 容量规划
+│   ├── 寄样执行月度看板
+│   │   ├── 寄样完成率月度值 + 环比
+│   │   ├── 待发货积压趋势
+│   │   ├── 各商务处理效率对比
+│   │   └── 洞察：流程瓶颈识别
+│   ├── 客户跟进月度分析
+│   │   ├── 跟进覆盖率趋势
+│   │   ├── 高价值客户跟进覆盖
+│   │   ├── 长期未跟进客户预警
+│   │   └── 洞察：跟进资源是否匹配客户价值
+│   ├── 建议卡 · 下月执行改进（2-3条）
+│   └── 流程优化建议
+│
+├── CMO 板块 · 市场增长与客户资产
+│   ├── 【图表】达人增长趋势（customer-growth.png）
+│   │   └── 洞察：增长曲线分析（加速/减速/线性）
+│   ├── 【图表】达人等级分布（level-distribution.png）
+│   │   └── 洞察：月度等级迁移 + 结构变化
+│   ├── 【图表】平台分布（platform-distribution.png）
+│   │   └── 洞察：平台多元化程度 + 机会评估
+│   ├── 【图表】平台×等级热力图（platform-level-heatmap.png）
+│   │   └── 洞察：最具潜力的平台×等级组合
+│   ├── 客户资产质量月度评估
+│   │   ├── salesTierDistribution 各层级 + 与上月对比
+│   │   ├── 高价值客户净增减
+│   │   ├── 客户流失预警（长期无跟进+低活跃度）
+│   │   └── 洞察：客户资产在升值还是贬值
+│   ├── 线索全链路分析
+│   │   ├── 线索量 + 转化率
+│   │   ├── 各阶段断裂点
+│   │   └── 洞察：增长杠杆在哪个环节
+│   ├── 建议卡 · 下月增长策略（3条）
+│   │   ├── 客户开发策略
+│   │   ├── 平台布局调整
+│   │   └── 达人培育升级
+│   └── 市场趋势与机会
+│
+└── 页脚
 ```
 
 ---
 
-## 💰 CFO视角：财务分析与投入产出
+## 四、分析指标计算公式
 
-### GMV（合同金额）分析
+以下指标不由后端直接提供，需要 Agent 从 API 数据中计算：
 
-- 本周活跃合同 **X笔**，金额 **XX.X万**
-- 新签 **X笔 XX万** ｜ 到期 **X笔 XX万**
-- 合同统计：共 **X笔**，总额 **XX万**，均价 **X.X万**
-- 较上周环比：[增减判断] ｜ 较历史均值：[对比判断]
-
-### 成本结构分析
-
-- 本周样品投入 **X.X万**（环比 +X%，较历史均值 +X%）
-- ROI **1:X.X**（上周 1:X.X，安全线 1:4）
-- 数据完整度 **XX%**
-
+### 寄样完成率
 ```
-📊 商务成本 Top5
-
-[名1]  ██████████████████████████████  X.X万  GMV XX万
-[名2]  ████████████████████░░░░░░░░░░  X.X万  GMV XX万
-[名3]  ██████████████░░░░░░░░░░░░░░░░  X.X万  GMV XX万
-[名4]  ████████░░░░░░░░░░░░░░░░░░░░░░  X.X万  GMV XX万
-[名5]  ████░░░░░░░░░░░░░░░░░░░░░░░░░░  X.X万  GMV XX万
-
-Top3 占总成本 XX%
+寄样完成率 = shipped / (shipped + pending) × 100%
+数据来源: order-overview.statCards 中 key=shipped 和 key=pending
 ```
 
-### 商务投入产出四象限
-
+### 跟进覆盖率
 ```
-📍 商务 ROI 矩阵
-
-         高 GMV
-           │
-    ┌──────┼──────┐
-    │ 金牛 │ 明星 │
-    │ [名] │ [名] │
-    │低投入│高投入│
-    │高产出│高产出│
-    ├──────┼──────┤
-    │ 观察 │ 问题 │
-    │ [名] │ [名] │
-    │低投入│高投入│
-    │低产出│低产出│
-    └──────┼──────┘
-         低 GMV
-   低投入 ←──→ 高投入
-
-明星：[名] 投入X万 GMV XX万 ROI 1:XX  ✅ 标杆
-金牛：[名] 投入X万 GMV XX万 ROI 1:XX  ✅ 推广
-问题：[名] 投入X万 GMV XX万 ROI 1:X   ⚠️ 需复盘
-观察：[名] 投入X万 GMV XX万 ROI 1:X   👀 再给时间
+跟进覆盖率 = followed / total × 100%
+数据来源: customer-overview.statCards 中 key=followed 和 key=total
 ```
 
-**CFO判断**：[本周财务健康度判断，成本控制建议]
-
----
-
-## 📦 COO视角：履约执行与运营效率
-
-### 工单执行总览
-
-| 指标 | 本周 | 上周 | 环比 | 本月累计 | 判断 |
-|:-----|-----:|-----:|-----:|--------:|:----:|
-| 工单总量 | **XX** | XX | +X% | XX | — |
-| 完成量 | **XX** | XX | +X% | XX | — |
-| 完成率 | **XX%** | XX% | +X% | — | — |
-| 超期率 | **X%** | X% | +X% | X% | 🔴 |
-| 损耗率 | **X%** | X% | +X% | X% | 🟡 |
-
-### 工单状态分布
-
+### A+B级占比
 ```
-📊 本周工单状态
-
-待处理   ████████████████████████████  XX单
-处理中   ████████████████████░░░░░░░░  XX单
-已发货   ██████████████░░░░░░░░░░░░░░  XX单
-待回收   ████████████░░░░░░░░░░░░░░░░  XX单  ⚠️
-超期     ████░░░░░░░░░░░░░░░░░░░░░░░░  XX单  🔴
-已完成   ██████████████████████████░░  XX单
-有损耗   ██░░░░░░░░░░░░░░░░░░░░░░░░░░  XX单  ⚠️
+A+B级占比 = abLevel / total × 100%
+数据来源: customer-overview.statCards 中 key=abLevel（这是占比值，已经是百分比）
 ```
 
-### 团队执行力排名
-
-| 排名 | 商务 | 工单量 | 完成率 | 超期 | 损耗 | 综合评分 |
-|:----:|:-----|------:|------:|-----:|-----:|:--------:|
-| 🥇 | [名] | XX | XX% | 0 | 0 | ⭐⭐⭐ |
-| 🥈 | [名] | XX | XX% | 1 | 0 | ⭐⭐ |
-| 🥉 | [名] | XX | XX% | 0 | 1 | ⭐⭐ |
-| ... | ... | ... | ... | ... | ... | ... |
-| ⬇️ | [名] | XX | XX% | X | X | ⭐ |
-
-**COO判断**：[本周执行力判断，流程瓶颈与改进建议]
-
----
-
-## 🌱 CMO视角：达人生态与客户质量
-
-### 增长洞察
-
-| 维度 | 本周 | 上周 | 环比 | 本月累计 | 判断 |
-|:-----|-----:|-----:|-----:|--------:|:----:|
-| 达人新增 | **X** | X | +N | XX | — |
-| A级新增 | **X** | X | +N | XX | 🟢 |
-| B级新增 | **X** | X | +N | XX | 🟢 |
-| 跟进覆盖率 | **XX%** | XX% | +X% | — | 🟡 |
-
-### 客户质量分层（本周新增）
-
+### 人均样品成本
 ```
-📊 新增客户GMV分层
-
-300万+     ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0人    0%   战略客户
-100-300万  ████░░░░░░░░░░░░░░░░░░░░░░░░░░  1人    8%   核心资产  🌟
-50-100万   ████████░░░░░░░░░░░░░░░░░░░░░░  2人   17%   高价值    ✅
-20-50万    ████████████░░░░░░░░░░░░░░░░░░  3人   25%   成长型    🟡
-<20万      ████████████████████████░░░░░░  6人   50%   孵化型    👀
-
-高价值客户占比(50万+)：25%  [健康度判断]
+人均样品成本 = avgPerOwner (单位: 分) ÷ 100
+数据来源: order-cost.statCards 中 key=avgPerOwner
 ```
 
-### 客户质量趋势分析
-
-| 层级 | 本周新增 | 上周新增 | 环比 | 质量评估 |
-|:----:|--------:|--------:|-----:|:--------:|
-| 300万+（战略） | X人 | X人 | +N | 🌟 核心 |
-| 100-300万（核心） | X人 | X人 | +N | 🟢 优质 |
-| 50-100万（高价值） | X人 | X人 | +N | 🟢 优质 |
-| 20-50万（成长型） | X人 | X人 | +N | 🟡 潜力 |
-| <20万（孵化型） | X人 | X人 | +N | 👀 筛选 |
-
-### 达人等级与平台分布
-
+### 单均样品成本
 ```
-📊 达人等级分布
-
-A级  ████████████░░░░░░░░░░░░░░░░░░  XX%  X人
-B级  ██████████████████░░░░░░░░░░░░  XX%  X人
-C级  ██████████████████████████░░░░  XX%  X人
-D级  ████████░░░░░░░░░░░░░░░░░░░░░░  XX%  X人
-
-A+B合计：XX%（上周 XX%）
+单均样品成本 = avgPerOrder (单位: 分) ÷ 100
+数据来源: order-cost.statCards 中 key=avgPerOrder
 ```
 
+### 环比变化率
 ```
-📊 平台分布
-
-抖音    ████████████████████████  XX人  XX%
-快手    ████████████████░░░░░░░░  XX人  XX%
-视频号  ████████░░░░░░░░░░░░░░░░  XX人  XX%
-拼多多  ████░░░░░░░░░░░░░░░░░░░░  XX人  XX%
+环比 = (本期值 - 上期值) / 上期值 × 100%
+必须调用两个时间范围的 API，不能依赖 StatCardItem.previousValue（当前为null）
 ```
 
 ### 转化漏斗
-
 ```
-🔻 本周转化漏斗
+线索数 = thisMonthClue.value
+客户数 = customer-overview.statCards.total
+商机数 = thisMonthOpportunityCount.value
+合同金额 = contract.amount
 
-线索  ████████████████████████████████  XXX  100%
-        ↓ XX%
-客户  █████████████████████░░░░░░░░░░░   XX   XX%
-        ↓ XX%
-商机  ██████████████░░░░░░░░░░░░░░░░░░   XX   XX%
-        ↓ XX%
-赢单  ████████░░░░░░░░░░░░░░░░░░░░░░░░   XX   XX%
-
-⚠️ 最大断裂：[XX→XX] 环节，仅 XX%
-```
-
-**CMO判断**：[本周拓新质量判断，客户结构优化建议]
-
----
-
-## ✅ 四角色联合建议
-
-**CEO视角**
-1. **[战略]** — [系统性风险或机会] — [资源配置建议]
-
-**CFO视角**
-2. **[财务]** — [成本控制要点] — [投入产出优化建议]
-
-**COO视角**
-3. **[执行]** — [履约瓶颈] — [流程改进建议]
-
-**CMO视角**
-4. **[增长]** — [拓新策略] — [客户质量提升建议]
-
----
-
-🤖 CordysBossCopilot 高管顾问团 · 自动推送
+漏斗转化率:
+  线索→客户 = 客户数 / 线索数 × 100%
+  客户→商机 = 商机数 / 客户数 × 100%
 ```
 
 ---
 
-## 月度经营报告
+## 五、数据完整性规则
 
-> 目标：老板 10 分钟内完成月度经营复盘，带着资源调配方案进入下月
+### 必须遵守
 
-### 必须调用的 API（全部调用，不可跳过）
+1. **不编造数据**：如 API 返回空或错误，在报告中标注"数据获取失败"，不要填充假数据
+2. **单位换算**：成本类字段（OrderCostResponse 系列）单位是**分**，展示时必须 ÷100
+3. **环比计算**：必须调用两个时间段的 API 进行手动对比
+4. **金额格式**：≥ 10000元 展示为 "X.X万"；< 10000元 展示为 "XXXX元"
+5. **跟进字段**：使用 `followTime` 而非 `latestFollowUpTime`（后端已知 bug）
+6. **销售层级**：使用 API 返回的 `salesTierDistribution.name` 作为层级名称，不硬编码
 
-```bash
-# ─── 经营分析（月度粒度） ───
-bin/cordys-boss analysis customer-overview '{"granularity":"MONTH"}'
-bin/cordys-boss analysis customer-portrait '{"granularity":"MONTH"}'
-bin/cordys-boss analysis order-overview '{"granularity":"MONTH"}'
-bin/cordys-boss analysis order-cost '{"granularity":"MONTH"}'
+### API 错误处理
 
-# ─── 合同数据 ───
-bin/cordys-boss crm statistic contract
-bin/cordys-boss crm statistic opportunity
-bin/cordys-boss crm page contract '{"combineSearch":{"searchMode":"AND","conditions":[{"value":"MONTH","operator":"DYNAMICS","name":"createTime","multipleValue":false,"type":"TIME_RANGE_PICKER"}]}}'
-
-# ─── 目标管理 ───
-bin/cordys-boss target home
-bin/cordys-boss target team
-bin/cordys-boss target ranking
-bin/cordys-boss target history                              # 与上月对比
-
-# ─── 漏斗数据 ───
-bin/cordys-boss home-stat lead
-bin/cordys-boss home-stat opportunity
-bin/cordys-boss home-stat opportunity-underway
-bin/cordys-boss home-stat opportunity-success
-
-# ─── 客户图表（可选增强） ───
-bin/cordys-boss crm chart account
-bin/cordys-boss crm chart lead
+```
+如果某个 API 调用失败或返回空数据：
+1. 在简报中该指标标注 "—"
+2. 在 HTML 报告中该图表位置显示 "数据暂不可用"
+3. 在执行摘要中说明哪些数据缺失
+4. 不要因为部分数据缺失就跳过整个报告
 ```
 
-### 月报模板
+### 图表 + 分析质量检查
 
-```markdown
-# 📊 月度经营报告 · YYYY年M月
-
-> 💡 **本月一句话**：[最重要的经营判断]
+生成报告前的自检清单：
+- [ ] 所有数值来自 API 返回
+- [ ] 成本金额已从分换算为元/万
+- [ ] 环比通过两期数据计算，非编造
+- [ ] 每张图表附带分析洞察（判断，非复述）
+- [ ] 每个角色板块有具体可执行的建议
+- [ ] 建议具体到人/时间/金额，非空泛建议
+- [ ] HTML 链接正确指向 COS 文件
 
 ---
 
-## 🏢 CEO视角：月度经营总览
+## 六、分析框架指引
 
-### 3个最重要的变化
-1. **[变化]** — [数据依据] — [对经营的影响]
-2. **[变化]** — [数据依据] — [对经营的影响]
-3. **[变化]** — [数据依据] — [对经营的影响]
+### CEO 分析框架
 
-### 2个最大的风险
-1. 🔴 **[风险]** — [不处理会怎样]
-2. 🟡 **[风险]** — [不处理会怎样]
-
-### 1个最关键的决策
-> [下月最需要老板拍板的一件事]
-
-### 核心经营指标
-
-| 维度 | 本月 | 上月 | 环比 | 历史均值 | 趋势 |
-|:-----|-----:|-----:|-----:|--------:|:----:|
-| GMV（合同金额） | **XX万** | XX万 | +X% | XX万 | 🟢 |
-| 达人新增 | **X人** | X人 | +N | X人 | 🟢 |
-| 样品成本 | **X.X万** | X.X万 | +X% | X.X万 | 🟡 |
-| ROI | **1:X.X** | 1:X.X | — | 1:X | 🟢 |
-| 超期率 | **X%** | X% | +X% | X% | 🔴 |
-| 高价值客户占比 | **XX%** | XX% | +X% | XX% | 🟢 |
-
----
-
-## 💰 CFO视角：财务深度分析
-
-### GMV月度表现
-
-- 合同总金额 **XX万**，共 **XX笔**，均价 **X.X万**
-- vs 上月：[增减判断] ｜ vs 历史均值：[对比判断]
+用第一性原理审视经营：
 
 ```
-📊 GMV 周度趋势
+1. 我们在赚钱吗？
+   → 合同金额趋势 + 商机pipeline + 转化率
 
-W1   ████████████████████░░░░░░░░░░  XX.X万
-W2   ██████████████████████░░░░░░░░  XX.X万
-W3   █████████████████████████░░░░░  XX.X万
-W4   ██████████████████████████████  XX.X万
+2. 我们的客户资产在增值还是贬值？
+   → 销售层级迁移 + A+B级占比变化 + 高价值客户净增减
+
+3. 我们的增长是健康的还是虚胖的？
+   → 新增客户 vs 成本增速 → 客户获取效率
+   → 新增客户的质量（等级分布）vs 数量
+
+4. 最大的风险在哪？
+   → 客户集中度 + 平台集中度 + 人员集中度
+   → 未跟进客户积压 → 客户流失风险
+
+5. 下一步最高杠杆的事是什么？
+   → 投入产出比最高的1-2个动作
 ```
 
-### 成本结构深度分析
+### CFO 分析框架
+
+用投入产出比审视每一分钱：
 
 ```
-📊 成本 Top5 商务
+1. 钱花在哪了？花得值不值？
+   → 成本用途分布 + 各商务投入排名
 
-[名1]  ██████████████████████████████  X.X万  贡献GMV XX万
-[名2]  ████████████████████░░░░░░░░░░  X.X万  贡献GMV XX万
-[名3]  ██████████████░░░░░░░░░░░░░░░░  X.X万  贡献GMV XX万
-[名4]  ████████░░░░░░░░░░░░░░░░░░░░░░  X.X万  贡献GMV XX万
-[名5]  ████░░░░░░░░░░░░░░░░░░░░░░░░░░  X.X万  贡献GMV XX万
+2. 谁的钱花得最好？为什么？
+   → ROI 四象限 + 最佳实践提取
 
-Top3 占总成本 XX% ｜ 数据完整度 XX%
+3. 谁的钱花得不好？根因是什么？
+   → 问题象限分析：是客户质量差？是方法不对？是新人？
+
+4. 按当前速率，预算会不会超？
+   → 月度burn rate + 季度预测
+
+5. 哪里加码能产生最大回报？
+   → 高 ROI 商务 + 高转化渠道
 ```
 
-```
-📊 成本用途分布
+### COO 分析框架
 
-直播带货  ████████████████████████  XX%  X.X万
-新品推广  ██████████░░░░░░░░░░░░░░  XX%  X.X万
-客情维护  ██████░░░░░░░░░░░░░░░░░░  XX%  X.X万
-其他      ██░░░░░░░░░░░░░░░░░░░░░░  XX%  X.X万
-```
-
-### 商务投入产出四象限
+用执行力审视每个流程节点：
 
 ```
-📍 商务 ROI 矩阵
+1. 工单处理效率达标吗？
+   → 寄样完成率 + 待处理积压量 + 趋势
 
-         高 GMV
-           │
-    ┌──────┼──────┐
-    │ 金牛 │ 明星 │
-    │ [名] │ [名] │
-    │低投入│高投入│
-    │高产出│高产出│
-    ├──────┼──────┤
-    │ 观察 │ 问题 │
-    │ [名] │ [名] │
-    │低投入│高投入│
-    │低产出│低产出│
-    └──────┼──────┘
-         低 GMV
-   低投入 ←──→ 高投入
+2. 客户都被照顾到了吗？
+   → 跟进覆盖率 + 未跟进客户列表 + 高价值客户覆盖
 
-明星：[名] 投入X万 GMV XX万 ROI 1:XX  ✅ 标杆，推广经验
-金牛：[名] 投入X万 GMV XX万 ROI 1:XX  ✅ 稳定，适度加码
-问题：[名] 投入X万 GMV XX万 ROI 1:X   ⚠️ 需复盘，控制投入
-观察：[名] 投入X万 GMV XX万 ROI 1:X   👀 再给一个月时间
+3. 瓶颈在哪个环节？
+   → 工单状态漏斗 → 哪个状态堆积最多
+
+4. 人力配置合理吗？
+   → 各商务工单量分布 + 处理效率差异
+
+5. 下周/下月执行改进的优先级？
+   → 影响客户最大的执行短板
 ```
 
-### 高价值客户GMV贡献分析
+### CMO 分析框架
+
+用增长视角审视客户资产：
 
 ```
-📊 客户GMV贡献金字塔（Top10）
+1. 客户资产的质量在变好还是变差？
+   → 销售层级结构变化 + 高价值客户占比趋势
 
-[达人1]  ██████████████████████████████  XX.X万  XX%  300万+
-[达人2]  ██████████████████████████░░░░  XX.X万  XX%  100-300万
-[达人3]  ██████████████████████░░░░░░░░  XX.X万  XX%  100-300万
-[达人4]  ██████████████████░░░░░░░░░░░░  XX.X万  XX%  50-100万
-[达人5]  ████████████████░░░░░░░░░░░░░░  XX.X万  XX%  50-100万
-[达人6]  ██████████████░░░░░░░░░░░░░░░░  XX.X万  XX%  20-50万
-[达人7]  ████████████░░░░░░░░░░░░░░░░░░  XX.X万  XX%  20-50万
-[达人8]  ██████████░░░░░░░░░░░░░░░░░░░░  XX.X万  XX%  20-50万
-[达人9]  ████████░░░░░░░░░░░░░░░░░░░░░░  XX.X万  XX%  <20万
-[达人10] ██████░░░░░░░░░░░░░░░░░░░░░░░░  XX.X万  XX%  <20万
+2. 增长动力来自哪里？
+   → 各平台增量贡献 + 各等级增量贡献
 
-Top10 合计占总 GMV XX% ｜ Top3 集中度 XX%
-```
+3. 哪个平台最有潜力？
+   → 平台×等级热力图 → 高价值达人密度
 
-**💡 CFO判断**：[本月财务健康度判断，成本控制与投入优化建议]
+4. 转化链路的最大断裂在哪？
+   → 转化漏斗 → 断裂点 → 改进方向
 
----
-
-## 📦 COO视角：运营效率与执行力
-
-### 履约效率月度汇总
-
-| 指标 | 本月 | 上月 | 环比 | 历史均值 | 判断 |
-|:-----|-----:|-----:|-----:|--------:|:----:|
-| 工单总量 | **XX** | XX | +X% | XX | — |
-| 完成量 | **XX** | XX | +X% | XX | — |
-| 完成率 | **XX%** | XX% | +X% | — | — |
-| 超期率 | **X%** | X% | +X% | X% | 🔴 |
-| 损耗率 | **X%** | X% | +X% | X% | 🟡 |
-| 平均周转天数 | **X天** | X天 | — | X天 | — |
-
-```
-📊 工单状态月度漏斗
-
-创建    ████████████████████████████████  XXX单  100%
-处理    ██████████████████████████░░░░░░   XX单   XX%
-发货    █████████████████████░░░░░░░░░░░   XX单   XX%
-回收    ██████████████░░░░░░░░░░░░░░░░░░   XX单   XX%
-完成    ██████████░░░░░░░░░░░░░░░░░░░░░░   XX单   XX%
-```
-
-### 团队执行力月度排名
-
-| 排名 | 商务 | GMV产出 | 工单量 | 完成率 | 超期 | 损耗 | 综合 |
-|:----:|:-----|-------:|------:|------:|-----:|-----:|:----:|
-| 🥇 | [名] | XX万 | XX | XX% | 0 | 0 | ⭐⭐⭐ |
-| 🥈 | [名] | XX万 | XX | XX% | 1 | 0 | ⭐⭐ |
-| 🥉 | [名] | XX万 | XX | XX% | 0 | 1 | ⭐⭐ |
-| ... | ... | ... | ... | ... | ... | ... | ... |
-| ⬇️ | [名] | XX万 | XX | XX% | X | X | ⭐ |
-
-**💡 COO判断**：[本月执行力判断，流程瓶颈与改进建议]
-
----
-
-## 🌱 CMO视角：达人生态与客户质量
-
-### 达人资产月度盘点
-
-```
-📊 达人等级分布（本月 vs 上月）
-
-A级  ████████████░░░░░░░░░░░░░░░░░░  XX% (X人)  上月XX%  ↑
-B级  ████████████████░░░░░░░░░░░░░░  XX% (X人)  上月XX%  →
-C级  ██████████████████████████░░░░  XX% (X人)  上月XX%  ↓
-D级  ████████░░░░░░░░░░░░░░░░░░░░░░  XX% (X人)  上月XX%  →
-
-A+B合计：XX%（上月XX%）[趋势判断]
-```
-
-### 客户质量分层深度分析
-
-```
-📊 客户质量金字塔（全量）
-
-300万+     ████░░░░░░░░░░░░░░░░░░░░░░░░░░  X人   X%   贡献XX%  🌟
-100-300万  ████████░░░░░░░░░░░░░░░░░░░░░░  X人   X%   贡献XX%  ✅
-50-100万   ████████████░░░░░░░░░░░░░░░░░░  XX人  X%   贡献XX%  ✅
-20-50万    ██████████████████░░░░░░░░░░░░  XX人  XX%  贡献XX%  🟡
-<20万      ████████████████████████████░░  XXX人 XX%  贡献XX%  👀
-
-高价值客户(50万+)：XX人，占比X%，贡献GMV XX%
-```
-
-### 客户质量趋势对比
-
-| 层级 | 本月 | 上月 | 环比 | 质量评估 |
-|:----:|-----:|-----:|-----:|:--------:|
-| 300万+（战略） | X人 | X人 | +N | 🌟 核心资产 |
-| 100-300万（核心） | X人 | X人 | +N | 🟢 优质 |
-| 50-100万（高价值） | XX人 | XX人 | +N | 🟢 优质 |
-| 20-50万（成长型） | XX人 | XX人 | +N | 🟡 潜力 |
-| <20万（孵化型） | XXX人 | XXX人 | +N | 👀 筛选 |
-
-### 平台 × 等级 热力图
-
-```
-🔥 平台达人质量矩阵
-
-          A级    B级    C级    D级    合计
-抖音      🔴X人  🟡X人  🟢X人  ⚪X人  XX人
-快手      🟡X人  🟢X人  🟢X人  ⚪X人  XX人
-视频号    ⚪X人  🟡X人  🔴X人  ⚪X人  XX人
-拼多多    ⚪X人  ⚪X人  🟡X人  🔴X人  XX人
-
-🔴高密度 🟡中密度 🟢低密度 ⚪无
-```
-
-### 转化漏斗月度表现
-
-```
-🔻 月度转化漏斗
-
-线索  ████████████████████████████████  XXX  100%
-        ↓ XX%
-客户  █████████████████████░░░░░░░░░░░   XX   XX%
-        ↓ XX%
-商机  ██████████████░░░░░░░░░░░░░░░░░░   XX   XX%
-        ↓ XX%
-赢单  ████████░░░░░░░░░░░░░░░░░░░░░░░░   XX   XX%
-        ↓ XX%
-合同  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░   XX    X%
-
-⚠️ 最大断裂：[环节] → 改善建议：[具体]
-```
-
-### 客户生命周期
-
-| 升级路径 | 本月 | 上月 | 变化 |
-|:--------|-----:|-----:|-----:|
-| D→C 升级 | **X人** | X人 | +N |
-| C→B 升级 | **X人** | X人 | +N |
-| B→A 升级 | **X人** | X人 | +N |
-| ⚠️ A/B级流失迹象 | **X人** | X人 | +N |
-
-**💡 CMO判断**：[本月拓新质量判断，客户结构优化建议]
-
----
-
-## ✅ 四角色联合建议：下月策略与资源配置
-
-### 资源配置调整
-
-| 方向 | 动作 | 依据 | 预期效果 |
-|:-----|:-----|:-----|:---------|
-| [商务/平台/产品] | 🟢 加码 | [数据] | [目标] |
-| [商务/平台/产品] | 🔴 收缩 | [数据] | [节省] |
-| [商务/平台/产品] | 🟡 观察 | [数据] | [时间] |
-
-### 四角色联合建议
-
-**CEO视角**：[战略方向与资源配置]
-
-**CFO视角**：[预算规划与成本控制]
-
-**COO视角**：[执行重点与流程优化]
-
-**CMO视角**：[拓新策略与客户质量提升]
-
-### 老板需要拍板的事
-1. [决策事项] — [选项] — [建议]
-2. [决策事项] — [选项] — [建议]
-
----
-
-🤖 CordysBossCopilot 高管顾问团 · 自动推送
+5. 增长在加速还是减速？
+   → 增长趋势曲线 → 增长率变化
 ```
 
 ---
 
-## 专题分析报告模板
-
-### 商务个人复盘
-
-> 必须调用：`target ranking` + `analysis order-cost` + `analysis customer-overview` + `crm statistic contract`
-
-```markdown
-# 👤 商务复盘 · [姓名] · [时间范围]
-
-## 📊 业绩总览
-
-| 维度 | 完成 | 目标 | 达成率 | 团队排名 |
-|:-----|-----:|-----:|------:|:--------:|
-| GMV | XX万 | XX万 | XX% | X/X |
-| 达人开发 | X人 | X人 | XX% | X/X |
-| 合同签约 | X笔 | X笔 | XX% | X/X |
-
-```
-目标达成
-GMV      ████████████████░░░░  XX%
-达人     ██████████████████░░  XX%
-合同     ████████████░░░░░░░░  XX%
-```
-
-## 💰 投入产出
-
-| 指标 | 本人 | 团队均值 | 对比 |
-|:-----|-----:|--------:|:----:|
-| 样品投入 | X.X万 | X.X万 | ↑/↓ |
-| GMV 产出 | XX万 | XX万 | ↑/↓ |
-| ROI | 1:X.X | 1:X.X | ↑/↓ |
-| 达人数 | X人 | X人 | ↑/↓ |
-
-## 🌱 达人开发质量
-
-```
-📊 开发达人等级
-
-A级  ██████░░░░░░░░░░░░░░  X人  XX%
-B级  ████████████░░░░░░░░  X人  XX%
-C级  ████████████████░░░░  X人  XX%
-D级  ██████████░░░░░░░░░░  X人  XX%
-```
-
-## ⚠️ 风险
-- 超期工单 **X单**，损耗 **X单**
-- [具体分析]
-
-## 💡 评价与建议
-- **值得表扬**：[具体做法]
-- **需要改善**：[具体方向]
-- **下月重点**：[具体动作]
-```
-
-### 平台专题分析
-
-> 必须调用：`analysis customer-portrait '{"platformValues":["平台名"]}'` + `analysis order-cost '{"platformValues":["平台名"]}'`
-
-```markdown
-# 📱 平台分析 · [平台名称] · [时间范围]
-
-## 📊 平台概况
-
-| 指标 | 数值 | 占全公司比 | 趋势 |
-|:-----|-----:|----------:|:----:|
-| 达人数 | **X人** | XX% | ↑ |
-| A+B级 | **X人** | XX% | → |
-| 本月GMV | **XX万** | XX% | ↑ |
-| 样品成本 | **X万** | XX% | → |
-| ROI | **1:X.X** | — | ↑ |
-
-```
-📊 该平台达人等级
-
-A级  ████████████████░░░░  XX%
-B级  ████████████░░░░░░░░  XX%
-C级  ██████████░░░░░░░░░░  XX%
-D级  ██████░░░░░░░░░░░░░░  XX%
-```
-
-## 💡 判断与建议
-- 平台价值：[高/中/低]
-- 投入策略：[加码/维持/收缩]
-- 具体动作：[1-2件事]
-```
-
-### 达人深度分析
-
-> 必须调用：`crm get account <id>` + `crm customer-stat contract <id>` + `crm customer-page contract <id>` + `crm customer-page opportunity <id>` + `crm customer-page order <id>`
-
-```markdown
-# 🌟 达人分析 · [达人名称]
-
-## 📋 基本信息
-
-| 字段 | 值 |
-|:-----|:---|
-| 等级 | A/B/C/D |
-| 平台 | XX |
-| 负责商务 | XX |
-| 合作起始 | YYYY-MM-DD |
-
-## 💰 GMV 贡献
-
-| 指标 | 数值 |
-|:-----|-----:|
-| 累计合同金额 | **XX.X万** |
-| 合同数量 | **X笔** |
-| 平均合同金额 | **X.X万** |
-| 最近合同 | YYYY-MM-DD |
-
-```
-📊 合同金额趋势
-
-M1   ████████░░░░░░░░░░░░  X.X万
-M2   ████████████░░░░░░░░  X.X万
-M3   ██████████████████░░  X.X万
-M4   ████████████████████  X.X万  ← 增长中
-```
-
-## 📦 投入分析
-- 样品寄送 **X次**，成本 **X.X万**
-- ROI **1:X.X**
-- 在同级达人中排名 **第X**
-
-## 🔍 价值判断
-
-| 维度 | 评分 | 说明 |
-|:-----|:----:|:-----|
-| GMV 贡献 | ⭐⭐⭐ | [说明] |
-| 合作深度 | ⭐⭐ | [说明] |
-| 增长潜力 | ⭐⭐⭐ | [说明] |
-| 流失风险 | 🟢低/🟡中/🔴高 | [说明] |
-
-**结论**：[核心/稳定/潜力/培育] 达人
-
-## 💡 建议
-- 维护策略：[具体]
-- 是否追加投入：[是/否 + 依据]
-```
-
----
-
-### 客户质量分层专题分析
-
-> 目标：深度分析客户质量结构，识别高价值客户，优化资源配置策略
-
-#### 必须调用的 API
-
-```bash
-# ─── 客户全景数据 ───
-bin/cordys-boss analysis customer-overview                    # 达人总量
-bin/cordys-boss analysis customer-portrait                    # 等级分布
-
-# ─── 合同数据（用于GMV分层） ───
-bin/cordys-boss crm statistic contract                        # 合同统计
-bin/cordys-boss crm page contract '{"pageSize":100}'          # 合同列表（用于客户GMV聚合）
-
-# ─── 客户维度统计 ───
-# 对每个重点客户调用
-bin/cordys-boss crm customer-stat contract <accountId>        # 单个客户合同统计
-
-# ─── 成本数据 ───
-bin/cordys-boss analysis order-cost                           # 成本分析
-```
-
-#### 专题报告模板
-
-```markdown
-# 💎 客户质量分层专题分析 · [时间范围]
-
-> 💡 **核心发现**：[最重要的客户质量判断，如"高价值客户占比偏低，需提升100-300万级客户开发力度"]
-
----
-
-## 📊 客户质量全景
-
-### GMV分层结构（全量客户）
-
-```
-📊 客户质量金字塔
-
-300万+     ████░░░░░░░░░░░░░░░░░░░░░░░░░░  X人   X%   贡献GMV XX%  🌟战略客户
-100-300万  ████████░░░░░░░░░░░░░░░░░░░░░░  X人   X%   贡献GMV XX%  ✅核心资产
-50-100万   ████████████░░░░░░░░░░░░░░░░░░  XX人  X%   贡献GMV XX%  ✅高价值
-20-50万    ██████████████████░░░░░░░░░░░░  XX人  XX%  贡献GMV XX%  🟡成长型
-<20万      ████████████████████████████░░  XXX人 XX%  贡献GMV XX%  👀孵化型
-
-Top20%客户贡献GMV：XX%  [健康度判断]
-```
-
-### 质量分布健康度评估
-
-| 指标 | 当前值 | 行业参考 | 健康度 | 建议 |
-|:-----|------:|--------:|:------:|:-----|
-| 高价值客户占比(50万+) | XX% | 20-30% | 🟢/🟡/🔴 | [建议] |
-| 客户集中度(Top10%) | XX% | <50% | 🟢/🟡/🔴 | [建议] |
-| 成长型客户占比(20-100万) | XX% | 25-35% | 🟢/🟡/🔴 | [建议] |
-| 孵化型客户占比(<20万) | XX% | <40% | 🟢/🟡/🔴 | [建议] |
-
----
-
-## 🎯 分层客户深度分析
-
-### 300万+ 战略客户
-
-| 客户 | 累计GMV | 合作时长 | 月均GMV | 趋势 | 维护优先级 |
-|:-----|--------:|--------:|--------:|:----:|:----------:|
-| [达人1] | XXX万 | X月 | XX万 | ↑ | P0 |
-| [达人2] | XXX万 | X月 | XX万 | → | P0 |
-| [达人3] | XXX万 | X月 | XX万 | ↓ | P1 |
-
-**战略客户维护建议**：
-- [具体维护动作和资源投入建议]
-
-### 100-300万 核心客户
-
-```
-📊 核心客户GMV分布
-
-[客户1]  ██████████████████████████████  XX万  100-300万
-[客户2]  ██████████████████████░░░░░░░░  XX万  100-300万
-[客户3]  ██████████████████░░░░░░░░░░░░  XX万  100-300万
-[客户4]  ████████████████░░░░░░░░░░░░░░  XX万  100-300万
-[客户5]  ██████████████░░░░░░░░░░░░░░░░  XX万  100-300万
-
-核心客户平均GMV：XX万  [提升空间判断]
-```
-
-**核心客户策略**：
-- 稳定性分析：[流失风险评估]
-- 扩容计划：[提升至300万+的潜力名单]
-
-### 50-100万 高价值客户
-
-| 客户 | 当前GMV | 升级潜力 | 预计投入 | 成功概率 | 建议动作 |
-|:-----|--------:|:--------:|--------:|:--------:|:---------|
-| [达人X] | X万 | 高 | X万 | 80% | 加大样品投入 |
-| [达人Y] | X万 | 中 | X万 | 60% | 提升跟进频次 |
-| [达人Z] | X万 | 高 | X万 | 75% | 定制合作方案 |
-
-### 20-50万 成长型客户
-
-**升级潜力分析**：
-- 数量：XX人，占比XX%
-- 平均GMV：XX万
-- 预计升级至50万+所需时间：X个月
-
-### <20万 孵化型客户筛选
-
-```
-📊 孵化型客户活跃度分布
-
-活跃(近30天有互动)    ████████████████░░░░░░░░░░░░░░  XX人  XX%
-沉默(30-90天无互动)   ██████████░░░░░░░░░░░░░░░░░░░░  XX人  XX%
-流失风险(>90天无单)   ████████░░░░░░░░░░░░░░░░░░░░░░  XX人  XX%
-
-需激活客户：XX人  建议淘汰：XX人
-```
-
----
-
-## 💰 分层投入产出分析
-
-### 各层级ROI对比
-
-| 客户层级 | 客户数 | 样品投入 | GMV产出 | ROI | 投入占比 | 产出占比 | 效率 |
-|:--------:|-------:|--------:|--------:|:---:|--------:|--------:|:----:|
-| 300万+ | X人 | X.X万 | XX.X万 | 1:XX | X% | XX% | ⭐⭐⭐⭐ |
-| 100-300万 | X人 | X.X万 | XX.X万 | 1:XX | X% | XX% | ⭐⭐⭐⭐ |
-| 50-100万 | XX人 | X.X万 | XX.X万 | 1:XX | X% | XX% | ⭐⭐⭐ |
-| 20-50万 | XX人 | X.X万 | XX.X万 | 1:X | X% | X% | ⭐⭐ |
-| <20万 | XX人 | X.X万 | X.X万 | 1:X | X% | X% | ⭐ |
-
-**投入效率判断**：
-- [哪一层级ROI最高，是否应加码]
-- [哪一层级效率低，是否应调整策略]
-
-### 客户生命周期价值预估
-
-```
-📊 客户LTV分层
-
-           当前价值    预估LTV      维护成本    净价值
-300万+     ████████    ██████████   ██          ████████
-100-300万  ██████      ████████     ██          ██████
-50-100万   ████        ██████       █           ████
-20-50万    ██          ████         █           ███
-<20万      █           ██           █           ░
-
-建议：加大战略/核心客户投入，优化成长型转化，控制孵化型成本
-```
-
----
-
-## 🎯 客户质量优化策略
-
-### 短期行动（本月）
-
-1. **战略客户防流失**
-   - [具体客户] — [风险点] — [维护动作]
-
-2. **核心客户扩容**
-   - [目标客户] — [升级路径] — [资源需求]
-
-3. **成长型客户转化**
-   - [潜力名单] — [转化策略] — [预期效果]
-
-4. **孵化型客户筛选**
-   - [激活名单] — [淘汰标准] — [执行时间]
-
-### 中期规划（季度）
-
-| 目标 | 当前 | 目标值 | 提升路径 |
-|:-----|-----:|-------:|:---------|
-| 高价值客户占比 | XX% | XX% | [策略] |
-| 客户平均GMV | X万 | X万 | [策略] |
-| 客户留存率 | XX% | XX% | [策略] |
-| 新客户升级率 | XX% | XX% | [策略] |
-
-### 资源配置建议
-
-```
-📍 客户资源分配矩阵
-
-              高维护投入
-                  │
-         ┌────────┼────────┐
-         │  战略  │  核心  │
-         │  300万+│100-300万
-         ├────────┼────────┤
-         │  培育  │  筛选  │
-         │ 20-50万│  <20万 │
-         └────────┼────────┘
-              低维护投入
-      高价值 ←────────→ 低价值
-
-建议配比：
-- 战略客户(300万+)：30%资源
-- 核心客户(100-300万)：35%资源
-- 高价值客户(50-100万)：20%资源
-- 成长型客户(20-50万)：12%资源
-- 孵化型客户(<20万)：3%资源
-```
-
----
-
-## ✅ 执行检查清单
-
-- [ ] 战略客户本周维护完成
-- [ ] 核心客户扩容方案确定
-- [ ] 成长型转化名单锁定
-- [ ] 孵化型筛选标准制定
-- [ ] 下月客户开发质量目标设定
-
----
-
-🤖 CordysBossCopilot 高管顾问团 · 客户质量专题分析
-```
+## 七、Webhook 渲染约束
+
+- **不用 ASCII 框线艺术**：`━━╔══║╚` 在移动端会错位
+- **Markdown 表格**：用标准 Markdown 表格，不用 ASCII 对齐
+- **宽度 < 40 字符**：手机竖屏一行最多 40 个半角字符
+- **简报 ≤ 3 屏**：核心信息 + 链接，详情在 HTML
+- **状态指示**：🟢 健康 / 🟡 关注 / 🔴 预警
+- **趋势指示**：↑ 上升 / ↓ 下降 / → 持平
