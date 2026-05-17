@@ -81,6 +81,9 @@ description: |
 | 某个达人贡献了多少 GMV？ | **CFO** | CMO |
 | 损耗率多少？回收进度？ | **COO** | CFO |
 | 哪个商务该加资源/该收缩？ | **CEO** | CFO+COO |
+| 团队周报提交情况？谁没交？ | **COO** | CEO |
+| 周报推进数据怎么样？漏斗健康吗？ | **CMO** | COO |
+| 本周商务都在推进什么？ | **COO** | CEO |
 
 ### 角色分析框架
 
@@ -197,6 +200,18 @@ bin/cordys-boss home-stat opportunity-success [JSON]    # 赢单商机统计
 bin/cordys-boss home-stat department-tree               # 部门权限树
 ```
 
+### 商务周报只读查询
+
+```bash
+bin/cordys-boss weekly-report page [JSON|weekKey]      # 周报分页列表
+bin/cordys-boss weekly-report detail <id>              # 周报详情（含明细+推送日志）
+bin/cordys-boss weekly-report current [weekKey]        # 当前用户指定周周报
+bin/cordys-boss weekly-report dashboard [JSON]         # 团队周报看板
+bin/cordys-boss weekly-report resolve-week [timestamp] # 解析周范围
+```
+
+> 只读边界：不提供 `draft`、`submit`、`resend` 等写操作。
+
 ## 意图映射规则
 
 ### CEO 视角问题
@@ -261,6 +276,10 @@ bin/cordys-boss home-stat department-tree               # 部门权限树
 | 给我做周报 | CEO+全部 | 全部 analysis(WEEK) + `crm page contract`(本周活跃) + `crm statistic contract` + `target` + `home-stat` |
 | 给我做月报 | CEO+全部 | 全部 analysis(MONTH) + `crm page contract`(本月) + `crm statistic contract` + `target` + `target history` + `home-stat` |
 | 某个达人值不值得继续投入 | CEO+CFO+CMO | `crm customer-stat contract <id>` + `crm customer-page contract <id>` + `crm customer-page opportunity <id>` + `crm customer-page order <id>` + `crm get account <id>` |
+| 团队周报提交率怎么样 | CEO+COO | `weekly-report dashboard` |
+| 谁没交周报 | COO | `weekly-report dashboard` + `weekly-report page` |
+| 周报推进漏斗分析 | CMO+COO | `weekly-report dashboard` + `weekly-report page` |
+| 某人的周报内容 | CEO+COO | `weekly-report page` → `weekly-report detail <id>` |
 
 ## 输出原则
 
@@ -503,6 +522,7 @@ CRM 模块支持动态时间常量（在 `combineSearch.conditions` 中使用）
 - `references/contract-analysis-api.md` — 合同（GMV）分析参考（含合同统计、客户统计）
 - `references/target-api.md` — 商务目标管理接口参考
 - `references/home-stat-api.md` — 首页统计接口参考
+- `references/weekly-report-api.md` — 商务周报只读查询接口参考
 - `references/readonly-boundary.md` — 只读安全边界说明
 - `prompts/role-ceo.md` — CEO 角色分析框架
 - `prompts/role-cfo.md` — CFO 角色分析框架
@@ -512,6 +532,7 @@ CRM 模块支持动态时间常量（在 `combineSearch.conditions` 中使用）
 - `prompts/chart-generation.md` — Python 图表生成规范（matplotlib + COS）
 - `prompts/html-report-design.md` — HTML 报告设计系统（mobile-first / zero-dep）
 - `prompts/report-templates.md` — 报告模板（日报/周报/月报，含 API 清单与双层交付结构）
+- `prompts/weekly-report-customer-dev-analysis.md` — 周报客户开发进度对比分析模板
 - `prompts/boss-insight-rules.md` — 洞察输出规则
 - `prompts/risk-scan-rules.md` — 风险巡检规则
 

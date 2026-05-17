@@ -40,6 +40,13 @@
 - 损耗高发的产品/商务/达人
 - 损耗原因分布
 
+### 6. 周报执行力
+- 团队周报提交率（应提交 vs 已提交）
+- 周报内容完整度（四板块覆盖情况）
+- 周报推进数据趋势（待开发→已建联→已寄样→已排期的漏斗）
+- 周报提交及时性（截止日前/后提交）
+- 未交周报人员名单及历史习惯
+
 ## 核心指标看板
 
 | 指标 | 数据来源 | 预警阈值 |
@@ -52,6 +59,9 @@
 | 排名变动 | `target ranking` | 连续下滑 2 周 |
 | 工单周转天数 | `analysis order-overview → orderTrend` | 均值 > 7 天 |
 | 跟进覆盖率 | `analysis customer-overview → statCards` | < 60% |
+| 周报提交率 | `weekly-report dashboard` | < 90% |
+| 未交周报人数 | `weekly-report dashboard` | > 1 人 |
+| 周报推进总数 | `weekly-report dashboard` | 周环比下降 > 20% |
 
 ## COO 决策树
 
@@ -84,6 +94,13 @@
   │   │    → 下钻：哪些产品损耗高？
   │   │    → 下钻：哪些达人的单有损耗？
   │   │    → 交叉：CFO 量化损失金额
+  │   └─ 否 → 继续
+  │
+  ├─ 周报提交率 < 90%？
+  │   ├─ 是 → 🟡 执行力预警
+  │   │    → 下钻：哪些人没交？(weekly-report dashboard)
+  │   │    → 下钻：是偶发还是习惯性？(weekly-report page 历史)
+  │   │    → 判断：流程问题 vs 态度问题 vs 工作量问题
   │   └─ 否 → 继续
   │
   └─ 以上均正常 → 🟢 运营高效
@@ -121,6 +138,21 @@ bin/cordys-boss analysis order-overview        # 损耗率总览
 bin/cordys-boss sample-order page '{"hasLoss":true}'  # 有损耗的工单
 bin/cordys-boss sample-order get <id>                  # 损耗单详情
 bin/cordys-boss sample-order recovery-list <orderId>   # 回收流水中的损耗记录
+```
+
+### 周报执行力监控（每周一/五必查）
+```bash
+bin/cordys-boss weekly-report dashboard                    # 团队提交总览
+bin/cordys-boss weekly-report page '{"weekKey":"2026-W20"}' # 本周所有周报
+bin/cordys-boss weekly-report page '{"weekKey":"2026-W20","status":"DRAFT"}' # 未提交（草稿中）
+bin/cordys-boss weekly-report detail <id>                  # 具体某人周报详情
+bin/cordys-boss weekly-report resolve-week                 # 确认当前周标识
+```
+
+### 周报推进漏斗分析
+```bash
+bin/cordys-boss weekly-report dashboard '{"weekKey":"2026-W20"}'   # 团队看板（含四板块汇总）
+bin/cordys-boss weekly-report page '{"weekKey":"2026-W20","status":"SUBMITTED"}'  # 已提交列表
 ```
 
 ### 目标差距分析
@@ -181,7 +213,17 @@ COO 视角：
    - 损耗金额估算
    - 高损耗责任人/产品
 
-六、本周必须推动的事
+六、周报执行力
+   | 指标 | 数值 | 判断 |
+   |------|------|------|
+   | 提交率 | XX% | 🟢/🟡/🔴 |
+   | 未交人数 | X 人 | 名单：... |
+   | 四板块总量 | XX 条 | 环比 |
+
+   📊 周报推进漏斗图
+   📊 提交率进度条
+
+七、本周必须推动的事
    1. 谁 — 做什么 — 截止时间 — 预期结果
    2. ...
    （最多 5 件，按优先级排序）
@@ -200,6 +242,9 @@ COO 视角报告建议包含以下图表：
 7. **团队目标排名对比图**：本周 vs 上周排名变动
 8. **损耗率趋势图**：月度/周度损耗率变化曲线
 9. **瓶颈环节堆积图**：各状态节点的工单堆积数量柱状图
+10. **周报提交率进度条**：应提交 vs 已提交
+11. **周报推进漏斗图**：四板块总量（待开发→已建联→已寄样→已排期）
+12. **未交周报人员列表**：带历史提交习惯标记
 
 ## COO 流程效率分析模型
 

@@ -90,6 +90,35 @@ print(json.dumps(payload, ensure_ascii=False))
 PY
 }
 
+weekly_report_page_payload() {
+  local week_key="${1:-}"
+  python3 - "$week_key" <<'PY'
+import json, sys
+wk = sys.argv[1] if len(sys.argv) > 1 else ""
+payload = {
+  "current": 1,
+  "pageSize": 30,
+  "weekKey": None,
+  "status": None,
+  "pushStatus": None,
+  "departmentId": None,
+  "userIds": [],
+  "mineOnly": False
+}
+if wk:
+    payload["weekKey"] = wk
+print(json.dumps(payload, ensure_ascii=False))
+PY
+}
+
+weekly_report_dashboard_payload() {
+  python3 - <<'PY'
+import json
+payload = {}
+print(json.dumps(payload, ensure_ascii=False))
+PY
+}
+
 # ─── HTTP 请求 ───
 
 api_request() {
@@ -420,6 +449,60 @@ boss_home_stat() {
   esac
 }
 
+# ─── weekly-report 命令族（周报只读查询） ───
+
+boss_weekly_report() {
+  local action="$1"
+  shift || true
+
+  case "$action" in
+    page)
+      local first="${1:-}"
+      local body
+      if [[ -n "$first" && "$first" == \{* ]]; then
+        body="$first"
+      else
+        body="$(weekly_report_page_payload "${first:-}")"
+      fi
+      api_request POST "/weekly-report/page" -d "$body"
+      ;;
+    detail)
+      local report_id="${1:-}"
+      [[ -n "$report_id" ]] || die "weekly-report detail 需要周报 ID"
+      api_request GET "/weekly-report/detail/${report_id}"
+      ;;
+    current)
+      local week_key="${1:-}"
+      local query=""
+      if [[ -n "$week_key" ]]; then
+        query="?weekKey=${week_key}"
+      fi
+      api_request GET "/weekly-report/current${query}"
+      ;;
+    dashboard)
+      local first="${1:-}"
+      local body
+      if [[ -n "$first" && "$first" == \{* ]]; then
+        body="$first"
+      else
+        body="$(weekly_report_dashboard_payload)"
+      fi
+      api_request POST "/weekly-report/dashboard" -d "$body"
+      ;;
+    resolve-week)
+      local timestamp="${1:-}"
+      local query=""
+      if [[ -n "$timestamp" ]]; then
+        query="?timestamp=${timestamp}"
+      fi
+      api_request GET "/weekly-report/resolve-week${query}"
+      ;;
+    *)
+      die "weekly-report 子命令不支持: $action（支持: page, detail, current, dashboard, resolve-week）"
+      ;;
+  esac
+}
+
 # ─── 帮助信息 ───
 
 usage() {
@@ -478,6 +561,13 @@ cordys-boss — 老板专属只读经营 Copilot CLI（高管顾问团）
     opportunity-success [JSON]    赢单商机统计
     department-tree               部门权限树（首页统计维度）
 
+  📑 weekly-report — 商务周报只读查询
+    page [JSON|weekKey]           周报分页列表
+    detail <id>                   周报详情（含明细+推送日志）
+    current [weekKey]             当前用户指定周周报
+    dashboard [JSON]              团队周报看板
+    resolve-week [timestamp]      解析周范围（Asia/Shanghai ISO 周）
+
   help                            显示帮助
 
 示例:
@@ -496,6 +586,16 @@ cordys-boss — 老板专属只读经营 Copilot CLI（高管顾问团）
   cordys-boss crm contract-invoice-stat 789012
   cordys-boss crm chart account
   cordys-boss home-stat lead
+  cordys-boss weekly-report page
+  cordys-boss weekly-report page 2026-W20
+  cordys-boss weekly-report page '{"weekKey":"2026-W20","status":"SUBMITTED"}'
+  cordys-boss weekly-report detail 123456
+  cordys-boss weekly-report current
+  cordys-boss weekly-report current 2026-W20
+  cordys-boss weekly-report dashboard
+  cordys-boss weekly-report dashboard '{"weekKey":"2026-W20","departmentId":"dept01"}'
+  cordys-boss weekly-report resolve-week
+  cordys-boss weekly-report resolve-week 1746470400000
 
 安全边界:
   - 本 CLI 只读，不支持任何写操作
@@ -516,6 +616,7 @@ case "$cmd" in
   crm)          boss_crm "$@" ;;
   target)       boss_target "$@" ;;
   home-stat)    boss_home_stat "$@" ;;
+  weekly-report) boss_weekly_report "$@" ;;
   help|-h|--help) usage ;;
   *)
     die "未知命令: $cmd（尝试 cordys-boss help）"

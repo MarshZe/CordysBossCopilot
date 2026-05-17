@@ -74,6 +74,7 @@ CordysBossCopilot/
 │   ├── contract-analysis-api.md       # 合同（GMV）分析参考（含统计/客户统计）
 │   ├── target-api.md                  # 商务目标管理接口参考
 │   ├── home-stat-api.md               # 首页统计接口参考
+│   ├── weekly-report-api.md           # 商务周报只读查询接口参考
 │   └── readonly-boundary.md           # 只读安全边界说明
 ├── prompts/
 │   ├── role-ceo.md                    # CEO 角色分析框架（含决策树/KPI联动）
@@ -105,6 +106,7 @@ CordysBossCopilot/
 | `crm contract-invoice-stat` | 合同发票统计 | `cordys-boss crm contract-invoice-stat <id>` |
 | `target` | 商务目标管理 | `cordys-boss target ranking` |
 | `home-stat` | 首页统计 | `cordys-boss home-stat lead` |
+| `weekly-report` | 商务周报只读查询 | `cordys-boss weekly-report dashboard` |
 
 ## 环境变量
 

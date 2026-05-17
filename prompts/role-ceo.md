@@ -115,6 +115,13 @@ bin/cordys-boss crm statistic opportunity     # 商机态势
 bin/cordys-boss sample-order page '{"status":"PENDING_RECOVERY","overdueLevel":"OVERDUE"}'
 ```
 
+### 周报执行力监控（每周一/每周五）
+```bash
+bin/cordys-boss weekly-report dashboard                    # 团队提交总览
+bin/cordys-boss weekly-report page '{"weekKey":"2026-W20","status":"SUBMITTED"}'
+bin/cordys-boss weekly-report page '{"weekKey":"2026-W20","status":"DRAFT"}'
+```
+
 ## 输出风格
 
 ### 语言特征
